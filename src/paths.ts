@@ -1,57 +1,39 @@
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Platform } from "./config.js";
+import type { Settings } from "./settings.js";
 
 export interface DataPaths {
   root: string;
+  settings: string;
   config: string;
-  runtime: string;
-  entry: string;
-  lock: string;
-  stop: string;
+  lockDir: string;
   state: string;
   logs: string;
-  metadata: string;
-  installLock: string;
-  serviceName: string;
-  plist: string;
 }
 
-export function getPaths(platform: Platform, override?: string): DataPaths {
-  const root = resolve(
-    override ??
-      (platform === "darwin"
-        ? join(
-            homedir(),
-            "Library",
-            "Application Support",
-            "CBN",
-            "aTrustKeepalive",
-          )
-        : join(
-            process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"),
-            "CBN",
-            "aTrustKeepalive",
-          )),
+function defaultRoot(): string {
+  if (process.platform === "darwin")
+    return join(homedir(), "Library", "Application Support", "vpn-keepalive");
+  if (process.platform === "win32")
+    return join(
+      process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"),
+      "vpn-keepalive",
+    );
+  return join(
+    process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
+    "vpn-keepalive",
   );
-  const suffix = createHash("sha256").update(root).digest("hex").slice(0, 12);
-  const serviceName =
-    platform === "darwin"
-      ? `com.cbn.atrust-keepalive.${suffix}`
-      : `CBN-aTrustKeepalive-${suffix}`;
+}
+
+/** 根据数据根目录与存储设置解析路径；自定义目录为空时落在根目录内。 */
+export function getPaths(override?: string, settings?: Settings): DataPaths {
+  const root = resolve(override ?? defaultRoot());
   return {
     root,
-    config: join(root, "config.json"),
-    runtime: join(root, "runtime"),
-    entry: join(root, "runtime", "cli.js"),
-    lock: join(root, "run.lock"),
-    stop: join(root, "stop.json"),
+    settings: join(root, "settings.json"),
+    config: join(settings?.configDir ?? root, "config.json"),
+    lockDir: join(root, "run.lock"),
     state: join(root, "state.json"),
-    logs: join(root, "logs"),
-    metadata: join(root, "installation.json"),
-    installLock: join(root, "install.lock"),
-    serviceName,
-    plist: join(homedir(), "Library", "LaunchAgents", `${serviceName}.plist`),
+    logs: settings?.logDir ?? join(root, "logs"),
   };
 }

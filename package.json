@@ -1,36 +1,44 @@
 {
-  "name": "@cbn-bass/atrust-keepalive",
-  "version": "0.1.0",
-  "description": "随 aTrust 主客户端启停的跨平台 HTTP 保活工具",
-  "private": true,
+  "name": "vpn-keepalive",
+  "version": "0.2.0",
+  "description": "可配置多地址的 HTTP 保活工具，本地 Web 界面配置，npx 直接运行",
   "type": "module",
   "bin": {
-    "atrust-keepalive": "dist/cli.js"
+    "vpn-keepalive": "dist/cli.js"
   },
   "files": [
     "dist",
-    "config.example.json",
     "README.md"
   ],
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && vue-tsc --noEmit -p web/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "build": "tsc && node scripts/finish-build.mjs",
-    "prepack": "npm run build",
-    "verify:integration": "npm run build && node scripts/verify-integration.mjs"
+    "build": "tsc && vite build web && node scripts/finish-build.mjs",
+    "prepack": "pnpm run build",
+    "verify:integration": "pnpm run build && node scripts/verify-integration.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@types/node": "^24.0.0",
+    "@vitejs/plugin-vue": "^6.0.0",
     "eslint": "^10.0.0",
     "globals": "^17.0.0",
+    "naive-ui": "^2.45.3",
     "prettier": "^3.8.0",
     "typescript": "^6.0.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "vite": "^7.0.0",
+    "vue": "^3.5.0",
+    "vue-tsc": "^3.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

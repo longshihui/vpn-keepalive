@@ -1,22 +1,28 @@
 import { readFile } from "node:fs/promises";
-import { record } from "./files.js";
+import { record, writeAtomic } from "./files.js";
 
 export interface Config {
-  url: string;
+  /** 可配置的保活地址列表，默认为空 */
+  urls: string[];
+  /** 当前选中的活动地址；null 表示未选择，引擎待机 */
+  url: string | null;
   intervalMinutes: number;
   timeoutMs: number;
-  processPollIntervalMs: number;
-  processName: string;
 }
 
-export type Platform = "darwin" | "win32";
+export const DEFAULT_CONFIG: Config = {
+  urls: [],
+  url: null,
+  intervalMinutes: 1,
+  timeoutMs: 10_000,
+};
 
-export function supportedPlatform(): Platform {
-  if (process.platform === "darwin" || process.platform === "win32")
-    return process.platform;
-  throw new Error(
-    `不支持的系统：${process.platform}；仅支持 macOS 和 Windows。`,
-  );
+function parseUrl(value: string, key: string): string {
+  if (!value.trim()) throw new Error(`${key} 必须为非空字符串。`);
+  const parsed = new URL(value.trim());
+  if (!["http:", "https:"].includes(parsed.protocol))
+    throw new Error(`${key} 仅支持 HTTP/HTTPS。`);
+  return parsed.href;
 }
 
 function positiveTimer(value: unknown, key: string, factor = 1): number {
@@ -31,63 +37,73 @@ function positiveTimer(value: unknown, key: string, factor = 1): number {
   return value;
 }
 
-export function parseConfig(input: unknown, platform: Platform): Config {
+/** 请求间隔只允许整分钟。 */
+function positiveMinutes(value: unknown): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value * 60_000 > 2_147_483_647
+  )
+    throw new Error("intervalMinutes 必须为不小于 1 的整数分钟。");
+  return value;
+}
+
+export function parseConfig(input: unknown): Config {
   if (!record(input)) throw new Error("配置必须为 JSON 对象。");
-  const known = new Set([
-    "url",
-    "intervalMinutes",
-    "timeoutMs",
-    "processPollIntervalMs",
-    "processName",
-  ]);
+  const known = new Set(["urls", "url", "intervalMinutes", "timeoutMs"]);
   for (const key of Object.keys(input))
     if (!known.has(key)) throw new Error(`未知配置字段：${key}`);
-  const url = input.url === undefined ? "http://10.249.12.234" : input.url;
-  if (typeof url !== "string" || !url.trim())
-    throw new Error("url 必须为非空字符串。");
-  const parsed = new URL(url.trim());
-  if (!["http:", "https:"].includes(parsed.protocol))
-    throw new Error("url 仅支持 HTTP/HTTPS。");
-  const processName =
-    input.processName === undefined
-      ? platform === "darwin"
-        ? "aTrust"
-        : "aTrustTray.exe"
-      : input.processName;
+  const urlsInput = input.urls === undefined ? [] : input.urls;
   if (
-    typeof processName !== "string" ||
-    !/^[\w .-]{1,128}$/.test(processName) ||
-    processName.trim() !== processName
+    !Array.isArray(urlsInput) ||
+    !urlsInput.every((item): item is string => typeof item === "string")
   )
-    throw new Error("processName 必须为不含路径及特殊字符的进程名。");
+    throw new Error("urls 必须为字符串数组。");
+  const urls = urlsInput.map((item) => parseUrl(item, "urls 项"));
+  if (new Set(urls).size !== urls.length)
+    throw new Error("urls 中存在重复地址。");
+  let url: string | null = null;
+  if (input.url !== undefined && input.url !== null) {
+    if (typeof input.url !== "string")
+      throw new Error("url 必须为字符串或 null。");
+    url = parseUrl(input.url, "url");
+    if (!urls.includes(url))
+      throw new Error("url 必须为 urls 中的地址，或为 null。");
+  }
   return {
-    url: parsed.href,
-    intervalMinutes: positiveTimer(
-      input.intervalMinutes === undefined ? 1 : input.intervalMinutes,
-      "intervalMinutes",
-      60_000,
+    urls,
+    url,
+    intervalMinutes: positiveMinutes(
+      input.intervalMinutes === undefined
+        ? DEFAULT_CONFIG.intervalMinutes
+        : input.intervalMinutes,
     ),
     timeoutMs: positiveTimer(
-      input.timeoutMs === undefined ? 10_000 : input.timeoutMs,
+      input.timeoutMs === undefined
+        ? DEFAULT_CONFIG.timeoutMs
+        : input.timeoutMs,
       "timeoutMs",
     ),
-    processPollIntervalMs: positiveTimer(
-      input.processPollIntervalMs === undefined
-        ? 3_000
-        : input.processPollIntervalMs,
-      "processPollIntervalMs",
-    ),
-    processName:
-      platform === "win32" && !processName.toLowerCase().endsWith(".exe")
-        ? `${processName}.exe`
-        : processName,
   };
 }
 
-export async function loadConfig(
-  path: string,
-  platform: Platform,
-): Promise<Config> {
-  const content: unknown = JSON.parse(await readFile(path, "utf8"));
-  return parseConfig(content, platform);
+/** 读取配置文件；不存在时以默认值创建并返回。 */
+export async function loadOrCreateConfig(path: string): Promise<Config> {
+  try {
+    return parseConfig(JSON.parse(await readFile(path, "utf8")));
+  } catch (error) {
+    if (!(
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ))
+      throw error;
+  }
+  await writeAtomic(path, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`);
+  return DEFAULT_CONFIG;
+}
+
+export async function saveConfig(path: string, config: Config): Promise<void> {
+  await writeAtomic(path, `${JSON.stringify(config, null, 2)}\n`);
 }

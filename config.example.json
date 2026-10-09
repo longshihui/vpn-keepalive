@@ -1,6 +1,0 @@
-{
-  "url": "http://10.249.12.234",
-  "intervalMinutes": 1,
-  "timeoutMs": 10000,
-  "processPollIntervalMs": 3000
-}

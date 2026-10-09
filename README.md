@@ -1,114 +1,133 @@
-# aTrust Keepalive
+# vpn-keepalive
 
-随 aTrust 主客户端启停的 HTTP GET 保活工具。支持 macOS、Windows，要求 Node.js 24+。运行时仅使用 Node 原生能力，不需要 Vite、pnpm 或源码仓库。
+可配置多地址的 HTTP 保活工具。`npx` 直接运行，本地 Web 界面配置，配置保存到本地数据目录。
 
-## 安装与使用
-
-由维护者提供构建后的 `cbn-bass-atrust-keepalive-0.1.0.tgz`，成员执行：
+## 快速开始
 
 ```bash
-npm install -g ./cbn-bass-atrust-keepalive-0.1.0.tgz
-atrust-keepalive install
-atrust-keepalive status
+npx vpn-keepalive
 ```
 
-安装会复制运行文件到当前用户的数据目录、注册自动启动项并立即启动。以后登录系统自动待机，检测到 aTrust 主客户端后立即保活；退出客户端后取消请求并待机。关闭窗口、最小化、注销或断网不停止监听器，网络失败会记录日志并在下一周期继续尝试。
+运行后打开输出的界面地址（默认 `http://127.0.0.1:3777`），在界面中添加保活地址并选择一个作为当前活动地址，保存后立即生效。`Ctrl+C` 停止。
 
-macOS 使用当前用户的 LaunchAgent，Windows 使用当前用户的登录触发任务、交互登录令牌和普通权限。Windows 后台窗口隐藏，不依赖管理员身份，不存储登录密码；任务不会因运行超过三天或切换电池而停止，异常退出后每分钟重试，最多三次。系统策略拒绝创建任务时，安装报错并回滚，不修改系统策略。
-
-手动前台运行（与已安装监听器共用数据目录时只允许一个实例）：
+也可以全局安装后运行：
 
 ```bash
-atrust-keepalive run
-atrust-keepalive run --config ./config.json
+npm install -g vpn-keepalive
+vpn-keepalive
 ```
 
-卸载后台工具：
+要求 Node.js 20+，支持 macOS、Windows、Linux。运行时零依赖，仅使用 Node 原生能力。
+
+## 命令行选项
 
 ```bash
-atrust-keepalive uninstall
-npm uninstall -g @cbn-bass/atrust-keepalive
+vpn-keepalive [--port <端口>] [--host <地址>] [--data-dir <目录>]
 ```
 
-先执行工具的 `uninstall`，再移除 npm 包。卸载停止监听器，移除启动项和运行文件，保留配置、状态与日志；重新安装时沿用配置。
+| 选项                | 默认值      | 说明                                   |
+| ------------------- | ----------- | -------------------------------------- |
+| `--port <端口>`     | `3777`      | Web 界面端口；被占用时自动改用随机端口 |
+| `--host <地址>`     | `127.0.0.1` | 监听地址；仅本机访问，无需鉴权         |
+| `--data-dir <目录>` | 平台默认    | 覆盖数据根目录，用于隔离运行           |
+| `--help`            |             | 查看帮助                               |
+| `--version`         |             | 查看版本                               |
 
 ## 配置
 
-复制 `config.example.json` 并按需修改：
+保活配置保存在 `config.json`（位置见「存储位置」），首次运行自动创建；也可以在 Web 界面中编辑，保存后热生效，无需重启。
 
 ```json
 {
+  "urls": ["http://10.249.12.234"],
   "url": "http://10.249.12.234",
   "intervalMinutes": 1,
-  "timeoutMs": 10000,
-  "processPollIntervalMs": 3000
+  "timeoutMs": 10000
 }
 ```
 
-```bash
-atrust-keepalive install --config ./config.json
+| 字段              | 默认值  | 约束                                                       |
+| ----------------- | ------- | ---------------------------------------------------------- |
+| `urls`            | `[]`    | 保活地址列表，每项为非空 HTTP/HTTPS URL，不可重复          |
+| `url`             | `null`  | 当前选中的活动地址，必须属于 `urls` 或为 null；null 时待机 |
+| `intervalMinutes` | `1`     | 请求间隔，只允许不小于 1 的整数分钟（最大 35791）          |
+| `timeoutMs`       | `10000` | 请求超时，正整数毫秒，最大 2147483647                      |
+
+`urls` 可配置多个地址（如多个 VPN 网关），在界面列表中一键切换当前活动地址；未选择地址时引擎待机，不发任何请求。
+
+## 存储位置
+
+数据根目录中的 `settings.json` 记录可自定义的存储位置：
+
+```json
+{
+  "configDir": null,
+  "logDir": null
+}
 ```
 
-| 字段                    | 默认值                                     | 约束                                         |
-| ----------------------- | ------------------------------------------ | -------------------------------------------- |
-| `url`                   | `http://10.249.12.234`                     | 非空 HTTP/HTTPS URL                          |
-| `intervalMinutes`       | `1`                                        | 正数，换算后至少 1ms，最大 2147483647ms      |
-| `timeoutMs`             | `10000`                                    | 正整数毫秒，最大 2147483647                  |
-| `processPollIntervalMs` | `3000`                                     | 正整数毫秒，最大 2147483647                  |
-| `processName`           | macOS：`aTrust`；Windows：`aTrustTray.exe` | 可选；主进程名，不能包含路径、引号或特殊字符 |
+| 字段        | 默认值          | 说明                   |
+| ----------- | --------------- | ---------------------- |
+| `configDir` | 数据根目录      | `config.json` 所在目录 |
+| `logDir`    | 数据根目录/logs | 日志文件所在目录       |
 
-未提供的字段使用默认值。未知字段、空 URL、非 HTTP/HTTPS URL、无效数值或进程名会在请求和注册启动项前报错。修改安装后的配置文件，重新执行 `atrust-keepalive install` 生效；传入 `--config` 会替换已有配置，不传则保留原配置。
+- 路径支持以 `~` 开头（展开为当前用户主目录），其余须为绝对路径；macOS / Windows / Linux 原生路径均可。
+- 在 Web 界面「存储位置」中修改并保存后立即生效：现有配置与历史日志会复制到新目录，原文件保留；实例锁与运行状态始终保存在数据根目录。
+- `--data-dir` 指定的目录同样读取其内的 `settings.json`。
 
-## 状态、日志与数据目录
+## Web 界面
 
-`status` 输出 JSON，包括启动项是否注册、监听器是否运行、客户端 PID、检测错误、最近请求结果、运行错误、配置路径、日志路径和安装时记录的 Node 路径。监听器运行状态包括 `waiting`、`active`、`detection-error`；停止后显示 `stopped`。
+页面自上而下分为三个区块：
 
-默认数据目录：
+- **运行状态**：当前状态（保活中 / 待机）、当前地址、运行时长、下次请求倒计时、最近请求结果（成功 / HTTP 错误 / 超时 / 网络错误），以及控制台日志视图（最近 200 行，自动滚动跟随，按级别着色）。
+- **保活配置**：地址表格（添加 / 删除 / 设为活动，点击行即可切换）、请求间隔（整数分钟）、请求超时，保存后立即生效。
+- **存储位置**：配置文件目录与日志目录的自定义路径，保存后迁移。
 
-- macOS：`~/Library/Application Support/CBN/aTrustKeepalive`
-- Windows：`%LOCALAPPDATA%\CBN\aTrustKeepalive`
+## HTTP API
 
-目录中包含 `config.json`、独立运行文件 `runtime/`、`installation.json`、`state.json`、实例锁和 `logs/`。日志为 `keepalive.log`、`.1`、`.2`，单文件最多 2MB，总计最多三个；请求不保存响应正文。
+界面之外也可直接调用：
 
-所有命令支持 `--data-dir <目录>`，用于独立配置或隔离验证。不同目录产生不同启动项名称；自定义安装后，查询、更新和卸载必须传入同一目录。
+| 路由            | 方法    | 说明                                               |
+| --------------- | ------- | -------------------------------------------------- |
+| `/api/config`   | GET     | 读取当前配置                                       |
+| `/api/config`   | PUT     | 保存配置（整体 JSON），校验失败返回 400 与错误信息 |
+| `/api/settings` | GET/PUT | 读取 / 修改存储目录设置（修改即迁移配置与日志）    |
+| `/api/status`   | GET     | 运行状态、最近请求、路径、PID、版本                |
+| `/api/logs`     | GET     | 最近日志（`?lines=N`，默认 200，上限 1000）        |
+
+## 数据目录
+
+- macOS：`~/Library/Application Support/vpn-keepalive`
+- Windows：`%LOCALAPPDATA%\vpn-keepalive`
+- Linux：`$XDG_CONFIG_HOME/vpn-keepalive`（默认 `~/.config/vpn-keepalive`）
+
+数据根目录内包含 `settings.json`、`state.json`（最近状态）、`run.lock/`（实例锁），以及默认位置下的 `config.json` 与 `logs/`（可通过存储设置指向其他目录）。日志为 `keepalive.log`、`.1`、`.2`，单文件最多 2MB，总计最多三个；请求不保存响应正文。
+
+## 行为细节
+
+- 选中活动地址后立即请求一次，此后按整分钟间隔周期请求；在途请求未结束（含超时等待）时跳过当期，不重叠。
+- 同一数据根目录只允许一个实例（PID 存活检查）；进程异常退出后残留的锁会自动恢复。
+- 修改保活配置保存后：中止当前周期与在途请求，按新配置立即请求并重启周期。
+- 修改存储目录保存后：配置与日志复制到新目录并即刻切换写入；运行状态与实例锁仍在数据根目录。
+- 默认端口被占用时自动改用随机端口；界面地址以启动输出为准。
+- HTTP 成功不代表目标服务可用，也不延长服务端的绝对会话时限。
+
+## 开发与发布
 
 ```bash
-atrust-keepalive install --config ./config.json --data-dir "./独立 配置"
-atrust-keepalive status --data-dir "./独立 配置"
-atrust-keepalive uninstall --data-dir "./独立 配置"
+pnpm install
+pnpm typecheck        # tsc + vue-tsc
+pnpm lint
+pnpm format:check
+pnpm build            # tsc + vite build（web/ → dist/web）
+pnpm verify:integration
+pnpm pack             # 检查打包产物
 ```
 
-同一数据目录使用 PID、启动时间和入口身份校验防止重复运行，异常退出留下的实例锁会自动恢复。安装和卸载也使用互斥锁；安装失败撤销新增启动项并恢复之前的运行文件、配置与启动项。
+后端为 `src/`（Node 原生 TypeScript），前端为 `web/`（Vue3 + Vite + TS + Naive UI），前端构建产物 `dist/web` 由服务托管。集成测试覆盖引擎调度、错误分类、热更新、实例锁、配置校验、存储目录迁移、日志接口、API、CLI 子进程（含重启后目录生效）与日志轮转。
 
-## 生命周期与限制
-
-- macOS 匹配当前用户的主进程完整名称；Windows 匹配当前登录会话的主进程完整名称。不会匹配 Helper、Agent、Tunnel 或其他用户的会话。
-- 每 3 秒检测一次，检测命令超时为 2 秒；正常负载下启停响应目标为 5 秒以内。进程检测失败会暂停请求，恢复后重新判断。
-- 最多一个保活请求并行。请求未结束时跳过周期；退出或更换主进程 PID 时取消旧周期及进行中的请求。系统休眠时不工作，恢复后不会补发积压请求。
-- 以主进程退出为停止条件，HTTP 成功不代表 aTrust 已认证，也不保证延长服务端规定的绝对会话时限。
-- Windows 的默认 `aTrustTray.exe` 来自深信服客户端进程清单；不同客户端版本必须确认“退出客户端”确实退出该主进程，必要时覆盖 `processName`。
-- 安装记录 Node 可执行文件的绝对路径。nvm 切换版本后保留旧路径可继续运行；删除、迁移旧 Node 目录后，需要用新 Node 重新执行 `install`。
-
-## 开发与分发
+发布到 npm（公共包，无 scope）：
 
 ```bash
-npm ci
-npm run typecheck
-npm run lint
-npm run format:check
-npm run build
-npm run verify:integration
-npm pack
+pnpm publish
 ```
-
-`npm run verify:integration` 使用本地 HTTP 服务、受控生命周期及隔离目录检查调度、取消、错误恢复和实例锁，不修改真实 aTrust。需要验证真实系统启动项时执行 `npm run verify:integration -- --service`，会创建独立名称的临时启动项并在结束时卸载。macOS 验证使用临时 LaunchAgent 文件，仍需另行验证真实用户目录中的下次登录启动。
-
-`npm pack` 自动构建，产物不包含源码和开发依赖。升级时安装新 `.tgz` 后再次执行 `atrust-keepalive install`，无自定义配置参数时保留原配置。
-
-源自经营分析项目的 `vite-dev-keepalive`，原项目已移除旧包和 Dashboard、Admin 接入。现在启动开发服务不会自动创建保活任务，成员需单独安装此工具。
-
-## 平台参考
-
-- [Apple LaunchAgent 文档](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)
-- [Microsoft 任务计划设置](https://learn.microsoft.com/en-us/powershell/module/scheduledtasks/new-scheduledtasksettingsset)
-- [深信服 aTrust 客户端进程清单](https://bbs.sangfor.com.cn/atrustdeveloper/aTrustClient/docs/9.%E7%AC%AC%E4%B8%89%E6%96%B9%E8%BD%AF%E4%BB%B6%E5%86%B2%E7%AA%81/9.2%E5%B7%B2%E7%9F%A5%E5%86%B2%E7%AA%81%E7%B1%BB%E8%BD%AF%E4%BB%B6.html)
