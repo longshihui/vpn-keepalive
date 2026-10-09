@@ -1,0 +1,36 @@
+{
+  "name": "@cbn-bass/atrust-keepalive",
+  "version": "0.1.0",
+  "description": "随 aTrust 主客户端启停的跨平台 HTTP 保活工具",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "atrust-keepalive": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "config.example.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "build": "tsc && node scripts/finish-build.mjs",
+    "prepack": "npm run build",
+    "verify:integration": "npm run build && node scripts/verify-integration.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.0.0",
+    "globals": "^17.0.0",
+    "prettier": "^3.8.0",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
