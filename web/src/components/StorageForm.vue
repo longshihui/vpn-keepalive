@@ -1,9 +1,22 @@
 <script setup lang="ts">
-import { NAlert, NButton, NCard, NForm, NFormItem, NInput } from "naive-ui";
+import {
+  NAlert,
+  NButton,
+  NCard,
+  NForm,
+  NFormItem,
+  NInput,
+  NInputGroup,
+} from "naive-ui";
+import { ref } from "vue";
+import DirPicker from "./DirPicker.vue";
+import { useDirPicker } from "../hooks/useDirPicker";
 import type { SettingsFormState } from "../hooks/useSettings";
 import type { ResolvedDirs } from "../types";
 
-defineProps<{
+type DirField = "configDir" | "logDir";
+
+const props = defineProps<{
   form: SettingsFormState;
   resolved: ResolvedDirs | null;
   settingsPath: string;
@@ -12,6 +25,21 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{ save: [] }>();
+
+const picker = useDirPicker();
+const pickingField = ref<DirField | null>(null);
+
+const openPicker = (field: DirField): void => {
+  pickingField.value = field;
+  const fallback = props.resolved ? props.resolved[field] : "~";
+  picker.open(props.form[field].trim() || fallback);
+};
+
+const onPickConfirm = (): void => {
+  if (pickingField.value && picker.current.value)
+    props.form[pickingField.value] = picker.current.value;
+  picker.close();
+};
 </script>
 
 <template>
@@ -28,30 +56,32 @@ const emit = defineEmits<{ save: [] }>();
     >
       <div class="field-row">
         <n-form-item label="配置文件目录">
-          <n-input
-            v-if="resolved"
-            :value="form.configDir"
-            :placeholder="resolved.configDir"
-            clearable
-            @update:value="form.configDir = $event"
-          />
-          <n-input v-else :value="form.configDir" clearable />
+          <n-input-group>
+            <n-input
+              :value="form.configDir"
+              :placeholder="resolved?.configDir ?? ''"
+              clearable
+              @update:value="form.configDir = $event"
+            />
+            <n-button @click="openPicker('configDir')">选择</n-button>
+          </n-input-group>
         </n-form-item>
         <n-form-item label="日志目录">
-          <n-input
-            v-if="resolved"
-            :value="form.logDir"
-            :placeholder="resolved.logDir"
-            clearable
-            @update:value="form.logDir = $event"
-          />
-          <n-input v-else :value="form.logDir" clearable />
+          <n-input-group>
+            <n-input
+              :value="form.logDir"
+              :placeholder="resolved?.logDir ?? ''"
+              clearable
+              @update:value="form.logDir = $event"
+            />
+            <n-button @click="openPicker('logDir')">选择</n-button>
+          </n-input-group>
         </n-form-item>
       </div>
       <p class="hint">
-        留空使用默认目录；支持以 ~
-        开头的路径（展开为用户主目录），其余须为绝对路径（macOS / Windows /
-        Linux 均可）。保存后现有配置与日志将复制到新目录，原文件保留。
+        留空使用默认目录；可点击“选择”浏览目录，或直接输入以 ~
+        开头的路径（展开为用户主目录）、绝对路径（macOS / Windows / Linux
+        均可）。保存后现有配置与日志将复制到新目录，原文件保留。
       </p>
     </n-form>
 
@@ -66,6 +96,18 @@ const emit = defineEmits<{ save: [] }>();
       </div>
     </template>
   </n-card>
+
+  <DirPicker
+    :show="picker.show.value"
+    :loading="picker.loading.value"
+    :error="picker.error.value"
+    :current="picker.current.value"
+    :parent="picker.parent.value"
+    :dirs="picker.dirs.value"
+    @navigate="picker.load"
+    @confirm="onPickConfirm"
+    @close="picker.close"
+  />
 </template>
 
 <style scoped>

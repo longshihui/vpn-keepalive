@@ -13,7 +13,12 @@ import { errorMessage, hasCode, readOptional, writeAtomic } from "./files.js";
 import type { KeepaliveEngine } from "./engine.js";
 import type { DataPaths } from "./paths.js";
 import { getPaths } from "./paths.js";
-import { parseSettings, saveSettings, type Settings } from "./settings.js";
+import {
+  expandPath,
+  parseSettings,
+  saveSettings,
+  type Settings,
+} from "./settings.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -172,6 +177,46 @@ export async function createAppServer(
           sendJson(response, 200, settingsPayload());
         } catch (error) {
           sendJson(response, 400, { error: errorMessage(error) });
+        }
+        return;
+      }
+      if (url.pathname === "/api/fs/dirs" && request.method === "GET") {
+        // 目录浏览：供前端目录选择器使用，返回子目录列表与上级目录。
+        const raw = (url.searchParams.get("path") ?? "").trim();
+        try {
+          const target = expandPath(raw === "" ? "~" : raw);
+          const entries = await readdir(target, { withFileTypes: true });
+          const dirs: Array<{ name: string; path: string }> = [];
+          for (const entry of entries) {
+            const child = join(target, entry.name);
+            if (entry.isDirectory()) {
+              dirs.push({ name: entry.name, path: child });
+            } else if (entry.isSymbolicLink()) {
+              // 符号链接需 stat 后确认指向目录，失效链接跳过。
+              try {
+                if ((await stat(child)).isDirectory())
+                  dirs.push({ name: entry.name, path: child });
+              } catch {
+                // 无法访问的链接跳过。
+              }
+            }
+          }
+          dirs.sort((a, b) => a.name.localeCompare(b.name));
+          const parent = dirname(target);
+          sendJson(response, 200, {
+            path: target,
+            parent: parent === target ? null : parent,
+            dirs,
+          });
+        } catch (error) {
+          const message = hasCode(error, "ENOENT")
+            ? `目录不存在：${raw === "" ? "~" : raw}`
+            : hasCode(error, "ENOTDIR")
+              ? "该路径不是目录。"
+              : hasCode(error, "EACCES") || hasCode(error, "EPERM")
+                ? "无权访问该目录。"
+                : errorMessage(error);
+          sendJson(response, 400, { error: message });
         }
         return;
       }

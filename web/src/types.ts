@@ -26,6 +26,17 @@ export interface SettingsResponse {
   settingsPath: string;
 }
 
+export interface DirEntry {
+  name: string;
+  path: string;
+}
+
+export interface DirsResponse {
+  path: string;
+  parent: string | null;
+  dirs: DirEntry[];
+}
+
 export interface LogsResponse {
   lines: string[];
   total: number;

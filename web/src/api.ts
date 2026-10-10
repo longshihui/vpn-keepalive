@@ -1,6 +1,7 @@
 import type {
   Config,
   ConfigResponse,
+  DirsResponse,
   LogsResponse,
   Settings,
   SettingsResponse,
@@ -53,4 +54,9 @@ export function updateSettings(settings: Settings): Promise<SettingsResponse> {
 
 export function fetchLogs(lines = 200): Promise<LogsResponse> {
   return request<LogsResponse>(`/api/logs?lines=${lines}`);
+}
+
+export function fetchDirs(path?: string): Promise<DirsResponse> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  return request<DirsResponse>(`/api/fs/dirs${query}`);
 }
