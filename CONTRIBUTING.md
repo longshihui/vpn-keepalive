@@ -17,13 +17,12 @@ pnpm install
 ## 项目结构
 
 ```text
-├── src/                 # 后端：Node 原生 TypeScript（零运行时依赖）
-│   ├── cli.ts           # CLI 入口（bin）
+├── src/                 # 后端：Node 原生 TypeScript（运行时依赖仅 commander）
+│   ├── cli.ts           # CLI 入口（bin，基于 commander）
 │   ├── server.ts        # HTTP 服务：静态资源托管 + /api 路由
 │   ├── engine.ts        # 保活引擎：调度、请求、状态
 │   ├── config.ts        # config.json 读写与校验
-│   ├── settings.ts      # settings.json 读写与路径展开
-│   ├── paths.ts         # 数据目录与文件路径解析
+│   ├── paths.ts         # 数据目录与文件路径解析（各 OS 约定目录）
 │   ├── logger.ts        # 日志写入与轮转
 │   ├── lock.ts          # 实例锁
 │   └── files.ts         # 文件读写工具
@@ -70,7 +69,7 @@ node dist/cli.js --port 3888 --data-dir /tmp/vk-dev
 
 ## 调试
 
-后端为纯 Node 原生能力，直接用 inspector：
+后端以 Node 原生能力为主（仅 CLI 解析依赖 commander），直接用 inspector：
 
 ```bash
 node --inspect-brk dist/cli.js --data-dir /tmp/vk-dev
@@ -97,7 +96,7 @@ node --inspect-brk dist/cli.js --data-dir /tmp/vk-dev
 
 ## 测试
 
-集成测试覆盖引擎调度、错误分类、热更新、实例锁、配置校验、存储目录迁移、日志接口、API、CLI 子进程（含重启后目录生效）与日志轮转：
+集成测试覆盖引擎调度、错误分类、热更新、实例锁、配置校验、日志接口、API、CLI 子进程（含重启后配置加载）与日志轮转：
 
 ```bash
 pnpm verify:integration
@@ -107,13 +106,23 @@ pnpm verify:integration
 
 ## 发布
 
-包为公共 npm 包（无 scope），发布流程：
+包为公共 npm 包（无 scope），通过 GitHub Actions 自动发布：推送 `v<version>` 格式的 tag 后，工作流（`.github/workflows/publish.yml`）会自动执行校验并发布到 npm。
 
-```bash
-pnpm publish
-```
+发布步骤：
 
-`pnpm publish` 会通过 `prepack` 钩子自动执行构建。发布前建议先本地检查打包产物：
+1. 将 `package.json` 中的 `version` 按语义化版本递增并提交。
+2. 打 tag（必须与 `version` 一致，如 `v0.2.1`）并推送：
+
+   ```bash
+   git tag v0.2.1
+   git push origin v0.2.1
+   ```
+
+3. 在仓库 Actions 页面查看工作流进度，全部通过后即发布成功。
+
+工作流内置检查：tag 与 `package.json` 的 `version` 不一致会直接失败；`typecheck` / `lint` / `format:check` / `verify:integration` 全部通过才会执行 `pnpm publish`（经 `prepack` 钩子自动构建）。
+
+发布前建议先本地检查打包产物：
 
 ```bash
 pnpm pack
@@ -121,7 +130,7 @@ pnpm pack
 
 发布前检查清单：
 
-- [ ] `pnpm typecheck` / `pnpm lint` / `pnpm format:check` 通过
-- [ ] `pnpm verify:integration` 通过
 - [ ] `package.json` 中 `version` 已按语义化版本递增
 - [ ] `README.md` 中如涉及版本描述已同步更新
+
+> 仓库需在 GitHub 仓库 Settings → Secrets → Actions 中配置 `NPM_TOKEN`（npmjs.com 生成的 Access Token，具备该包写入权限），工作流才能完成发布。

@@ -136,6 +136,11 @@ watch(
     <template #footer>
       <div class="meta">
         <div>
+          数据目录：<n-text code class="mono">{{
+            status?.dataRoot ?? "—"
+          }}</n-text>
+        </div>
+        <div>
           配置：<n-text code class="mono">{{
             status?.configPath ?? "—"
           }}</n-text>

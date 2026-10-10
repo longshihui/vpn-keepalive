@@ -18,7 +18,6 @@ import { KeepaliveEngine } from "../dist/engine.js";
 import { acquireLock, readOwner } from "../dist/lock.js";
 import { Logger } from "../dist/logger.js";
 import { getPaths } from "../dist/paths.js";
-import { DEFAULT_SETTINGS, parseSettings } from "../dist/settings.js";
 import { createAppServer } from "../dist/server.js";
 
 const directory = await mkdtemp(join(tmpdir(), "vpn-keepalive-验证-"));
@@ -130,19 +129,7 @@ try {
     intervalMinutes: 1,
     timeoutMs: 10_000,
   });
-  assert.deepEqual(parseSettings({}), DEFAULT_SETTINGS);
-  assert.throws(
-    () => parseSettings({ configDir: "relative/path" }),
-    /绝对路径/,
-  );
-  assert.throws(() => parseSettings({ logDir: 123 }), /必须为字符串/);
-  assert.throws(() => parseSettings({ unknown: 1 }), /未知设置字段/);
-  const tildeHome = parseSettings({ configDir: "~", logDir: "~/日志" });
-  assert.ok(!tildeHome.configDir?.includes("~"));
-  assert.ok(tildeHome.logDir?.endsWith("日志"));
-  console.log(
-    "通过：配置默认值、整分钟间隔校验、存储设置（~ 展开与绝对路径）校验。",
-  );
+  console.log("通过：配置默认值与整分钟间隔校验。");
 
   // 2. 引擎生命周期（直接构造配置对象以使用亚分钟周期，间隔校验在配置层）。
   const fastConfig = {
@@ -255,7 +242,7 @@ try {
     console.log("通过：实例锁互斥与陈旧锁抢占。");
   }
 
-  // 5. API：配置读写、存储目录迁移、日志接口。
+  // 5. API：配置读写、状态与日志接口。
   {
     behavior = "ok";
     const apiPaths = getPaths(join(directory, "api"));
@@ -276,7 +263,6 @@ try {
     appServer = await createAppServer({
       engine: apiEngine,
       paths: apiPaths,
-      settings: DEFAULT_SETTINGS,
       version: "test",
       webRoot: join(directory, "no-web"),
     });
@@ -311,75 +297,34 @@ try {
     assert.ok(["active", "waiting"].includes(status.status));
     assert.ok(Number.isFinite(status.uptimeMs));
     assert.equal(status.pid, process.pid);
+    assert.equal(status.dataRoot, apiPaths.root);
+    assert.equal(status.configPath, apiPaths.config);
+    assert.equal(status.logPath, join(apiPaths.logs, "keepalive.log"));
     const index = await fetch(`${base}/`);
     assert.equal(index.status, 404, "Web 资源缺失时回退 404");
 
-    // 存储设置：读取默认、非法拒绝、合法迁移。
-    const initialSettings = await (await fetch(`${base}/api/settings`)).json();
-    assert.deepEqual(initialSettings.settings, DEFAULT_SETTINGS);
-    assert.equal(initialSettings.resolved.configDir, apiPaths.root);
-    assert.equal(initialSettings.resolved.logDir, join(apiPaths.root, "logs"));
-    assert.equal(initialSettings.settingsPath, apiPaths.settings);
-    const badSettings = await fetch(`${base}/api/settings`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ configDir: "relative/path" }),
-    });
-    assert.equal(badSettings.status, 400);
-    const badField = await fetch(`${base}/api/settings`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ unknown: 1 }),
-    });
-    assert.equal(badField.status, 400);
-    const customConf = join(directory, "自定义 配置");
-    const customLogs = join(directory, "自定义 日志");
-    const putSettings = await fetch(`${base}/api/settings`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ configDir: customConf, logDir: customLogs }),
-    });
-    assert.equal(putSettings.status, 200);
-    const putSettingsData = await putSettings.json();
-    assert.equal(putSettingsData.settings.configDir, customConf);
-    assert.equal(putSettingsData.settings.logDir, customLogs);
-    // 配置与历史日志已复制到新目录；settings.json 写入数据根目录。
-    assert.ok(await readFile(join(customConf, "config.json"), "utf8"));
-    assert.ok(await readFile(join(customLogs, "keepalive.log"), "utf8"));
-    const diskSettings = JSON.parse(await readFile(apiPaths.settings, "utf8"));
-    assert.deepEqual(diskSettings, {
-      configDir: customConf,
-      logDir: customLogs,
-    });
-    const afterConfig = await (await fetch(`${base}/api/config`)).json();
-    assert.equal(afterConfig.configPath, join(customConf, "config.json"));
-    const afterStatus = await (await fetch(`${base}/api/status`)).json();
-    assert.equal(afterStatus.configPath, join(customConf, "config.json"));
-    assert.equal(afterStatus.logPath, join(customLogs, "keepalive.log"));
     // 日志接口：尾部行数、路径、格式。
     const logsResponse = await (await fetch(`${base}/api/logs?lines=3`)).json();
     assert.ok(Array.isArray(logsResponse.lines));
     assert.ok(logsResponse.lines.length > 0 && logsResponse.lines.length <= 3);
     assert.match(logsResponse.lines.at(-1), /\[(info|warn|error)\]/);
-    assert.equal(logsResponse.logPath, join(customLogs, "keepalive.log"));
-    // 停止后：新日志写入新目录；state 仍在数据根目录。
+    assert.equal(logsResponse.logPath, join(apiPaths.logs, "keepalive.log"));
+    // 停止后：停止日志落盘；state 仍在数据根目录。
     appServer.server.closeAllConnections();
     await new Promise((resolveClose) => appServer.server.close(resolveClose));
     appServer = undefined;
     await apiEngine.stop();
     apiLifecycle.abort();
     const stoppedLog = await readFile(
-      join(customLogs, "keepalive.log"),
+      join(apiPaths.logs, "keepalive.log"),
       "utf8",
     );
     assert.match(stoppedLog, /保活已停止/);
     assert.ok(await readFile(apiPaths.state, "utf8"));
-    console.log(
-      "通过：API 配置读写与整分钟校验、存储目录迁移（配置/日志复制、settings.json、路径切换）、日志接口。",
-    );
+    console.log("通过：API 配置读写与整分钟校验、状态与日志接口。");
   }
 
-  // 6. CLI 子进程：默认配置创建、整分钟保存、目录修改与重启后生效。
+  // 6. CLI 子进程：默认配置创建、整分钟保存、重启后生效。
   {
     const cliDir = join(directory, "cli");
     const first = childRun(["--data-dir", cliDir, "--port", "0"]);
@@ -392,6 +337,7 @@ try {
       intervalMinutes: 1,
       timeoutMs: 10_000,
     });
+    assert.equal(config.configPath, join(cliDir, "config.json"));
     const disk = JSON.parse(
       await readFile(join(cliDir, "config.json"), "utf8"),
     );
@@ -412,34 +358,23 @@ try {
     const index = await fetch(`${firstBase}/`);
     assert.equal(index.status, 200);
     assert.match(index.headers.get("content-type") ?? "", /text\/html/);
-    const cliConf = join(cliDir, "迁移 配置");
-    const putDir = await fetch(`${firstBase}/api/settings`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ configDir: cliConf }),
-    });
-    assert.equal(putDir.status, 200);
-    assert.ok(await readFile(join(cliConf, "config.json"), "utf8"));
     first.child.kill("SIGTERM");
     assert.equal((await first.exited).code, 0);
     assert.equal(await readOwner(join(cliDir, "run.lock")), null);
 
-    // 重启：读取 settings.json，配置来自新目录并直接保活。
+    // 重启：配置仍从同一约定目录加载并直接保活。
     const second = childRun(["--data-dir", cliDir, "--port", "0"]);
     const secondPort = await waitForPort(second.child);
     const secondBase = `http://127.0.0.1:${secondPort}`;
     const config2 = await (await fetch(`${secondBase}/api/config`)).json();
-    assert.equal(config2.configPath, join(cliConf, "config.json"));
+    assert.equal(config2.configPath, join(cliDir, "config.json"));
     assert.equal(config2.config.url, new URL(url).href);
-    const settings2 = await (await fetch(`${secondBase}/api/settings`)).json();
-    assert.equal(settings2.settings.configDir, cliConf);
-    assert.equal(settings2.resolved.configDir, cliConf);
     const status2 = await (await fetch(`${secondBase}/api/status`)).json();
     assert.equal(status2.status, "active");
     second.child.kill("SIGTERM");
     assert.equal((await second.exited).code, 0);
     console.log(
-      "通过：CLI 默认配置创建、整分钟保存生效、目录修改迁移、重启后从新目录加载并保活、SIGTERM 干净退出。",
+      "通过：CLI 默认配置创建、整分钟保存生效、重启后从同一目录加载并保活、SIGTERM 干净退出。",
     );
   }
 

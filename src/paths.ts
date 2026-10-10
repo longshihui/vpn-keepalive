@@ -1,10 +1,8 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Settings } from "./settings.js";
 
 export interface DataPaths {
   root: string;
-  settings: string;
   config: string;
   lockDir: string;
   state: string;
@@ -25,15 +23,18 @@ function defaultRoot(): string {
   );
 }
 
-/** 根据数据根目录与存储设置解析路径；自定义目录为空时落在根目录内。 */
-export function getPaths(override?: string, settings?: Settings): DataPaths {
+/**
+ * 解析数据路径。默认使用操作系统为用户应用约定的数据目录
+ * （macOS Application Support / Windows LocalAppData / Linux XDG），
+ * 避免系统位置导致读写权限问题；`--data-dir` 显式覆盖仅用于隔离运行。
+ */
+export function getPaths(override?: string): DataPaths {
   const root = resolve(override ?? defaultRoot());
   return {
     root,
-    settings: join(root, "settings.json"),
-    config: join(settings?.configDir ?? root, "config.json"),
+    config: join(root, "config.json"),
     lockDir: join(root, "run.lock"),
     state: join(root, "state.json"),
-    logs: settings?.logDir ?? join(root, "logs"),
+    logs: join(root, "logs"),
   };
 }

@@ -22,8 +22,8 @@ export interface EngineStatus {
 /** 周期保活引擎：选中地址后按间隔请求；未选择地址时待机。 */
 export class KeepaliveEngine {
   private config: Config;
-  private paths: DataPaths;
-  private logger: Logger;
+  private readonly paths: DataPaths;
+  private readonly logger: Logger;
   private readonly signal: AbortSignal;
   private timer: ReturnType<typeof setInterval> | undefined;
   private requestTask: Promise<void> | null = null;
@@ -104,12 +104,6 @@ export class KeepaliveEngine {
 
   getConfig(): Config {
     return structuredClone(this.config);
-  }
-
-  /** 切换存储位置（配置/日志目录变更后调用）：状态与后续日志写入新路径。 */
-  usePaths(paths: DataPaths): void {
-    this.paths = paths;
-    this.logger = new Logger(paths.logs);
   }
 
   private flush(): void {

@@ -3,22 +3,18 @@ import { NButton, NSpin, NTag, useMessage } from "naive-ui";
 import { onMounted, ref } from "vue";
 import ConfigForm from "./ConfigForm.vue";
 import StatusPanel from "./StatusPanel.vue";
-import StorageForm from "./StorageForm.vue";
 import { useConfigForm } from "../hooks/useConfigForm";
 import { useLogs } from "../hooks/useLogs";
-import { useSettings } from "../hooks/useSettings";
 import { useStatus } from "../hooks/useStatus";
 
 const form = useConfigForm();
 const status = useStatus();
 const logs = useLogs();
-const settingsForm = useSettings();
 const message = useMessage();
 const addError = ref<string | null>(null);
 
 onMounted(() => {
   void form.load();
-  void settingsForm.load();
 });
 
 const onAdd = (): void => {
@@ -32,17 +28,6 @@ const onSave = async (): Promise<void> => {
     void status.refresh();
   } else {
     message.error(form.saveError.value ?? "保存失败");
-  }
-};
-
-const onSaveSettings = async (): Promise<void> => {
-  const ok = await settingsForm.save();
-  if (ok) {
-    message.success("目录设置已保存，配置与日志已迁移");
-    void status.refresh();
-    void logs.refresh();
-  } else {
-    message.error(settingsForm.saveError.value ?? "保存失败");
   }
 };
 </script>
@@ -88,14 +73,6 @@ const onSaveSettings = async (): Promise<void> => {
             @select="form.selectUrl"
             @update:new-url="form.newUrl.value = $event"
             @save="onSave"
-          />
-          <StorageForm
-            :form="settingsForm.form.value"
-            :resolved="settingsForm.resolved.value"
-            :settings-path="settingsForm.settingsPath.value"
-            :load-error="settingsForm.loadError.value"
-            :saving="settingsForm.saving.value"
-            @save="onSaveSettings"
           />
         </div>
       </n-spin>

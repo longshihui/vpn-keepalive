@@ -10,33 +10,6 @@ export interface ConfigResponse {
   configPath: string;
 }
 
-export interface Settings {
-  configDir: string | null;
-  logDir: string | null;
-}
-
-export interface ResolvedDirs {
-  configDir: string;
-  logDir: string;
-}
-
-export interface SettingsResponse {
-  settings: Settings;
-  resolved: ResolvedDirs;
-  settingsPath: string;
-}
-
-export interface DirEntry {
-  name: string;
-  path: string;
-}
-
-export interface DirsResponse {
-  path: string;
-  parent: string | null;
-  dirs: DirEntry[];
-}
-
 export interface LogsResponse {
   lines: string[];
   total: number;
@@ -61,6 +34,7 @@ export interface Status {
   lastRequest: RequestResult | null;
   error: string | null;
   uptimeMs: number;
+  dataRoot: string;
   configPath: string;
   logPath: string;
   pid: number;

@@ -36,9 +36,13 @@
     "vue": "^3.5.0",
     "vue-tsc": "^3.0.0"
   },
+  "packageManager": "pnpm@10.24.0",
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "dependencies": {
+    "commander": "^15.0.0"
   }
 }
