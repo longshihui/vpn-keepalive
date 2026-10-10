@@ -51,13 +51,13 @@ pnpm verify:integration  # 集成测试（先执行 build）
 
 ```bash
 pnpm build
-node dist/cli.js
+node dist/cli.js ui
 ```
 
-与 `npx vpn-keepalive` 行为一致。建议加 `--data-dir` 指向临时目录，与真实数据隔离：
+与 `npx vpn-keepalive ui` 行为一致。建议加 `--data-dir` 指向临时目录，与真实数据隔离：
 
 ```bash
-node dist/cli.js --port 3888 --data-dir /tmp/vk-dev
+node dist/cli.js ui --port 3888 --data-dir /tmp/vk-dev
 ```
 
 ### 增量构建

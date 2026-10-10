@@ -324,26 +324,43 @@ try {
     console.log("通过：API 配置读写与整分钟校验、状态与日志接口。");
   }
 
-  // 6. CLI 子进程：默认配置创建、整分钟保存、重启后生效。
+  // 6. CLI 子进程：默认命令仅引擎、ui 命令提供 Web 界面。
   {
     const cliDir = join(directory, "cli");
-    const first = childRun(["--data-dir", cliDir, "--port", "0"]);
-    const firstPort = await waitForPort(first.child);
-    const firstBase = `http://127.0.0.1:${firstPort}`;
-    const config = await (await fetch(`${firstBase}/api/config`)).json();
-    assert.deepEqual(config.config, {
-      urls: [],
-      url: null,
+    // 预置配置：默认命令不依赖 Web 界面即可开始保活。
+    const presetConfig = parseConfig({
+      urls: [url],
+      url,
       intervalMinutes: 1,
-      timeoutMs: 10_000,
+      timeoutMs: 2000,
     });
-    assert.equal(config.configPath, join(cliDir, "config.json"));
-    const disk = JSON.parse(
-      await readFile(join(cliDir, "config.json"), "utf8"),
-    );
-    assert.deepEqual(disk, config.config);
+    await saveConfig(join(cliDir, "config.json"), presetConfig);
+
+    // a. 默认命令：仅运行保活引擎，不启动 Web 界面。
+    const first = childRun(["--data-dir", cliDir]);
+    let firstOut = "";
+    first.child.stdout.on("data", (chunk) => {
+      firstOut += chunk;
+    });
     const beforeCli = requests;
-    const put = await fetch(`${firstBase}/api/config`, {
+    await until(() => requests > beforeCli, "默认命令保活请求", 10_000);
+    first.child.kill("SIGTERM");
+    assert.equal((await first.exited).code, 0);
+    assert.equal(await readOwner(join(cliDir, "run.lock")), null);
+    assert.doesNotMatch(firstOut, /界面:/, "默认命令不得启动 Web 界面");
+
+    // b. ui 命令：从同一目录加载配置，启动 Web 界面与 API。
+    const second = childRun(["ui", "--data-dir", cliDir, "--port", "0"]);
+    const secondPort = await waitForPort(second.child);
+    const secondBase = `http://127.0.0.1:${secondPort}`;
+    const config = await (await fetch(`${secondBase}/api/config`)).json();
+    assert.deepEqual(config.config, presetConfig);
+    assert.equal(config.configPath, join(cliDir, "config.json"));
+    const index = await fetch(`${secondBase}/`);
+    assert.equal(index.status, 200);
+    assert.match(index.headers.get("content-type") ?? "", /text\/html/);
+    const beforeCliUi = requests;
+    const put = await fetch(`${secondBase}/api/config`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -354,27 +371,13 @@ try {
       }),
     });
     assert.equal(put.status, 200);
-    await until(() => requests > beforeCli, "CLI 保活请求", 10_000);
-    const index = await fetch(`${firstBase}/`);
-    assert.equal(index.status, 200);
-    assert.match(index.headers.get("content-type") ?? "", /text\/html/);
-    first.child.kill("SIGTERM");
-    assert.equal((await first.exited).code, 0);
-    assert.equal(await readOwner(join(cliDir, "run.lock")), null);
-
-    // 重启：配置仍从同一约定目录加载并直接保活。
-    const second = childRun(["--data-dir", cliDir, "--port", "0"]);
-    const secondPort = await waitForPort(second.child);
-    const secondBase = `http://127.0.0.1:${secondPort}`;
-    const config2 = await (await fetch(`${secondBase}/api/config`)).json();
-    assert.equal(config2.configPath, join(cliDir, "config.json"));
-    assert.equal(config2.config.url, new URL(url).href);
+    await until(() => requests > beforeCliUi, "ui 命令保活请求", 10_000);
     const status2 = await (await fetch(`${secondBase}/api/status`)).json();
     assert.equal(status2.status, "active");
     second.child.kill("SIGTERM");
     assert.equal((await second.exited).code, 0);
     console.log(
-      "通过：CLI 默认配置创建、整分钟保存生效、重启后从同一目录加载并保活、SIGTERM 干净退出。",
+      "通过：默认命令仅运行引擎且不启动界面、ui 命令启动 Web 界面与 API、整分钟保存生效、SIGTERM 干净退出。",
     );
   }
 
