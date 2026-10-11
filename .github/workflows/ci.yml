@@ -8,18 +8,41 @@ on:
 permissions:
   contents: read
 
+env:
+  HUSKY: 0
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: 校验推送的提交信息
+        if: github.event_name == 'push'
+        env:
+          COMMIT_FROM: ${{ github.event.before }}
+          COMMIT_TO: ${{ github.sha }}
+        run: |
+          if [ "$COMMIT_FROM" = "0000000000000000000000000000000000000000" ]; then
+            pnpm commitlint --last --verbose
+          else
+            pnpm commitlint --from "$COMMIT_FROM" --to "$COMMIT_TO" --verbose
+          fi
+      - name: 校验 PR 的提交信息
+        if: github.event_name == 'pull_request'
+        env:
+          COMMIT_FROM: ${{ github.event.pull_request.base.sha }}
+          COMMIT_TO: ${{ github.event.pull_request.head.sha }}
+        run: pnpm commitlint --from "$COMMIT_FROM" --to "$COMMIT_TO" --verbose
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm verify:integration
+      - run: pnpm verify:release

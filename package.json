@@ -2,34 +2,55 @@
   "name": "vpn-keepalive",
   "version": "0.2.0",
   "description": "可配置多地址的 HTTP 保活工具，本地 Web 界面配置，npx 直接运行",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/longshihui/vpn-keepalive.git"
+  },
   "type": "module",
   "bin": {
     "vpn-keepalive": "dist/cli.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
+    "prepare": "node scripts/prepare.mjs",
+    "commit": "czg",
+    "commitlint": "commitlint",
+    "changelog": "release-it --changelog --dry-run --no-hooks --no-git.requireBranch --no-git.requireCleanWorkingDir --no-git.requireUpstream --no-git.requireCommits --no-git.push",
+    "release": "release-it",
+    "release:dry-run": "release-it --dry-run",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm verify:integration && pnpm verify:release",
     "typecheck": "tsc --noEmit && vue-tsc --noEmit -p web/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "build": "tsc && vite build web && node scripts/finish-build.mjs",
     "prepack": "pnpm run build",
-    "verify:integration": "pnpm run build && node scripts/verify-integration.mjs"
+    "verify:integration": "pnpm run build && node scripts/verify-integration.mjs",
+    "verify:release": "node scripts/verify-release.mjs"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
     "@eslint/js": "^10.0.0",
+    "@release-it/bumper": "^7.0.6",
+    "@release-it/conventional-changelog": "^10.0.6",
     "@types/node": "^24.0.0",
     "@vitejs/plugin-vue": "^6.0.0",
+    "conventional-changelog-conventionalcommits": "^9.3.1",
+    "czg": "^1.14.0",
     "eslint": "^10.0.0",
     "globals": "^17.0.0",
+    "husky": "^9.1.7",
     "naive-ui": "^2.45.3",
     "prettier": "^3.8.0",
+    "release-it": "^19.2.4",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.0.0",
     "vite": "^7.0.0",
