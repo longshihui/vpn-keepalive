@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import { stdin } from "node:process";
 import { Command, InvalidArgumentError } from "commander";
-import { loadOrCreateConfig } from "./config.js";
+import { loadOrCreateConfig, saveConfig } from "./config.js";
 import { errorMessage, hasCode } from "./files.js";
 import { KeepaliveEngine } from "./engine.js";
 import { acquireLock } from "./lock.js";
 import { getPaths, type DataPaths } from "./paths.js";
+import { promptAddUrls } from "./prompt.js";
 import { createAppServer, type AppServer } from "./server.js";
 
 const VERSION = "0.2.0";
@@ -70,7 +72,7 @@ const run = async (options: RunOptions, ui?: UiOptions): Promise<void> => {
   if (Number(process.versions.node.split(".")[0]) < 20)
     throw new Error("需要 Node.js 20 或更新版本。");
   const paths = getPaths(options.dataDir);
-  const config = await loadOrCreateConfig(paths.config);
+  let config = await loadOrCreateConfig(paths.config);
   const lock = await acquireLock(paths.lockDir);
   const lifecycle = new AbortController();
   const onSigint = () => {
@@ -81,6 +83,32 @@ const run = async (options: RunOptions, ui?: UiOptions): Promise<void> => {
   process.once("SIGINT", onSigint);
   process.once("SIGTERM", onSigterm);
   try {
+    // 仅命令行运行且未配置地址时交互引导新增；非交互（管道/CI）环境保持待机。
+    if (!ui && config.urls.length === 0 && stdin.isTTY) {
+      // readline 在原始模式下拦截 Ctrl+C，以 AbortError 拒绝等待中的提问
+      // （进程未收到 SIGINT），需按停止请求处理。
+      const urls = await promptAddUrls(lifecycle.signal).catch(
+        (error: unknown) => {
+          if (error instanceof Error && error.name === "AbortError") {
+            onSigint();
+            return null;
+          }
+          throw error;
+        },
+      );
+      const [first] = urls ?? [];
+      if (urls !== null && first !== undefined) {
+        config = { ...config, urls, url: first };
+        await saveConfig(paths.config, config);
+        console.log(`已保存 ${urls.length} 个地址，活动地址：${first}。`);
+      } else if (!lifecycle.signal.aborted) {
+        console.log(
+          "未添加保活地址，待机中。可运行 vpn-keepalive ui 在界面中配置。",
+        );
+      }
+      // 引导期间已请求停止：跳过引擎启动，直接走收尾（finally 释放锁）。
+      if (lifecycle.signal.aborted) return;
+    }
     const engine = new KeepaliveEngine(config, paths, lifecycle.signal);
     engine.start();
     const app = ui ? await startUi(engine, paths, ui) : undefined;
@@ -91,9 +119,12 @@ const run = async (options: RunOptions, ui?: UiOptions): Promise<void> => {
 提示: 运行 vpn-keepalive ui 可启动 Web 界面
 按 Ctrl+C 停止`);
     await new Promise<void>((resolveStop) => {
-      lifecycle.signal.addEventListener("abort", () => resolveStop(), {
-        once: true,
-      });
+      // 等待前信号可能已中止（如引导期间 Ctrl+C），直接放行避免挂起。
+      if (lifecycle.signal.aborted) resolveStop();
+      else
+        lifecycle.signal.addEventListener("abort", () => resolveStop(), {
+          once: true,
+        });
     });
     if (app) await stopUi(app);
     await engine.stop();

@@ -17,9 +17,15 @@ export const DEFAULT_CONFIG: Config = {
   timeoutMs: 10_000,
 };
 
-function parseUrl(value: string, key: string): string {
+/** 校验并规范化单个保活地址；仅接受 HTTP/HTTPS，供命令行引导复用。 */
+export function parseUrl(value: string, key: string): string {
   if (!value.trim()) throw new Error(`${key} 必须为非空字符串。`);
-  const parsed = new URL(value.trim());
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new Error(`${key} 格式无效。`);
+  }
   if (!["http:", "https:"].includes(parsed.protocol))
     throw new Error(`${key} 仅支持 HTTP/HTTPS。`);
   return parsed.href;
