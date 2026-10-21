@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
-import { NCard, NDescriptions, NDescriptionsItem, NTag, NText } from "naive-ui";
+import { computed } from "vue";
+import {
+  NButton,
+  NCard,
+  NDescriptions,
+  NDescriptionsItem,
+  NTag,
+  NText,
+  useMessage,
+} from "naive-ui";
 import type { LogsResponse, RequestOutcome, Status } from "../types";
+import { useTrigger } from "../hooks/useTrigger";
 
 const props = defineProps<{
   status: Status | null;
@@ -10,6 +19,11 @@ const props = defineProps<{
   countdown: string;
   logs: LogsResponse | null;
 }>();
+
+const emit = defineEmits<{ triggered: [] }>();
+
+const message = useMessage();
+const trigger = useTrigger();
 
 const statusTag = computed(() => {
   switch (props.status?.status) {
@@ -40,41 +54,49 @@ const levelClass = (line: string): string => {
   return "log-info";
 };
 
-const consoleBody = ref<HTMLElement | null>(null);
-const pinned = ref(true);
-
-const onScroll = (): void => {
-  const element = consoleBody.value;
-  if (element)
-    pinned.value =
-      element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+const onTrigger = async (): Promise<void> => {
+  const response = await trigger.trigger();
+  if (!response) {
+    message.error(trigger.error.value ?? "触发失败");
+    return;
+  }
+  const last = response.lastRequest;
+  if (!last) message.info("已触发保活请求");
+  else if (last.outcome === "success")
+    message.success(`保活请求成功：${last.detail}`);
+  else
+    message.error(
+      `保活请求失败（${outcomeTag[last.outcome].label}）：${last.detail}`,
+    );
+  emit("triggered");
 };
-
-// 新日志到达时，若用户停留在底部则自动滚动跟随。
-watch(
-  () => props.logs,
-  async () => {
-    if (!pinned.value) return;
-    await nextTick();
-    const element = consoleBody.value;
-    if (element) element.scrollTop = element.scrollHeight;
-  },
-);
 </script>
 
 <template>
   <n-card title="运行状态" size="small">
     <template #header-extra>
-      <n-tag :type="statusTag.type" size="small" round>
-        <template #icon>
-          <span
-            class="dot"
-            :style="{ background: statusTag.dot }"
-            aria-hidden="true"
-          ></span>
-        </template>
-        {{ statusText }}
-      </n-tag>
+      <div class="header-extra">
+        <n-button
+          size="small"
+          type="primary"
+          secondary
+          :loading="trigger.triggering.value"
+          :disabled="status?.status !== 'active'"
+          @click="onTrigger"
+        >
+          立即保活
+        </n-button>
+        <n-tag :type="statusTag.type" size="small" round>
+          <template #icon>
+            <span
+              class="dot"
+              :style="{ background: statusTag.dot }"
+              aria-hidden="true"
+            ></span>
+          </template>
+          {{ statusText }}
+        </n-tag>
+      </div>
     </template>
 
     <n-descriptions
@@ -121,7 +143,7 @@ watch(
           >{{ logs.lines.length }} 行</span
         >
       </div>
-      <div ref="consoleBody" class="console-body" @scroll="onScroll">
+      <div class="console-body">
         <p
           v-for="(line, index) in logs?.lines ?? []"
           :key="index"
@@ -152,6 +174,12 @@ watch(
 </template>
 
 <style scoped>
+.header-extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .dot {
   display: inline-block;
   width: 8px;

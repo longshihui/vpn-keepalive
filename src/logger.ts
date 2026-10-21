@@ -1,14 +1,9 @@
-import {
-  appendFileSync,
-  mkdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hasCode } from "./files.js";
 
-const LIMIT = 2 * 1024 * 1024;
+/** 日志最多保留的行数，超出时丢弃最旧的行。 */
+const MAX_LINES = 10;
 
 export class Logger {
   readonly path: string;
@@ -17,26 +12,17 @@ export class Logger {
     this.path = join(directory, "keepalive.log");
   }
   write(level: "info" | "warn" | "error", message: string): void {
-    const line = `${new Date().toISOString()} [${level}] ${message.replaceAll(/\r?\n/g, " ").slice(0, 8_000)}\n`;
-    let size = 0;
+    const line = `${new Date().toISOString()} [${level}] ${message.replaceAll(/\r?\n/g, " ").slice(0, 8_000)}`;
+    let previous = "";
     try {
-      size = statSync(this.path).size;
+      previous = readFileSync(this.path, "utf8");
     } catch (error) {
       if (!hasCode(error, "ENOENT")) throw error;
     }
-    if (size + Buffer.byteLength(line) > LIMIT) {
-      rmSync(`${this.path}.2`, { force: true });
-      try {
-        renameSync(`${this.path}.1`, `${this.path}.2`);
-      } catch (error) {
-        if (!hasCode(error, "ENOENT")) throw error;
-      }
-      try {
-        renameSync(this.path, `${this.path}.1`);
-      } catch (error) {
-        if (!hasCode(error, "ENOENT")) throw error;
-      }
-    }
-    appendFileSync(this.path, line, { mode: 0o600 });
+    const lines = previous.split("\n").filter((existing) => existing !== "");
+    lines.push(line);
+    writeFileSync(this.path, `${lines.slice(-MAX_LINES).join("\n")}\n`, {
+      mode: 0o600,
+    });
   }
 }

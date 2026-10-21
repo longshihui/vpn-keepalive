@@ -82,6 +82,18 @@ export class KeepaliveEngine {
     this.flush();
   }
 
+  /**
+   * 手动触发一次保活请求（不影响既有周期）；
+   * 在途请求未结束时等待其完成，完成后结果记入 lastRequest。
+   */
+  triggerNow(): Promise<void> {
+    if (!this.config.url) return Promise.resolve();
+    this.logger.write("info", "手动触发保活请求。");
+    return this.requestOnce().catch((error: unknown) => {
+      this.logger.write("error", `保活请求异常：${errorMessage(error)}`);
+    });
+  }
+
   /** 停止引擎并等待 state.json 落盘；重复调用时仅等待在途写入。 */
   async stop(): Promise<void> {
     if (this.stopping) {

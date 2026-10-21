@@ -6,7 +6,6 @@ import {
   readFile,
   readdir,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -303,6 +302,21 @@ try {
     const index = await fetch(`${base}/`);
     assert.equal(index.status, 404, "Web 资源缺失时回退 404");
 
+    // 手动触发接口：未选择地址时返回 400。
+    const idle = await fetch(`${base}/api/config`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        urls: [url],
+        url: null,
+        intervalMinutes: 1,
+        timeoutMs: 1000,
+      }),
+    });
+    assert.equal(idle.status, 200);
+    const noUrl = await fetch(`${base}/api/trigger`, { method: "POST" });
+    assert.equal(noUrl.status, 400, "未选择地址时触发必须被拒绝");
+
     // 日志接口：尾部行数、路径、格式。
     const logsResponse = await (await fetch(`${base}/api/logs?lines=3`)).json();
     assert.ok(Array.isArray(logsResponse.lines));
@@ -324,10 +338,10 @@ try {
     console.log("通过：API 配置读写与整分钟校验、状态与日志接口。");
   }
 
-  // 6. CLI 子进程：默认命令仅引擎、ui 命令提供 Web 界面。
+  // 6. CLI 子进程：默认命令启动保活引擎与 Web 界面。
   {
     const cliDir = join(directory, "cli");
-    // 预置配置：默认命令不依赖 Web 界面即可开始保活。
+    // 预置配置：CLI 从数据目录加载并立即开始保活。
     const presetConfig = parseConfig({
       urls: [url],
       url,
@@ -336,31 +350,29 @@ try {
     });
     await saveConfig(join(cliDir, "config.json"), presetConfig);
 
-    // a. 默认命令：仅运行保活引擎，不启动 Web 界面。
     const first = childRun(["--data-dir", cliDir]);
-    let firstOut = "";
-    first.child.stdout.on("data", (chunk) => {
-      firstOut += chunk;
-    });
-    const beforeCli = requests;
-    await until(() => requests > beforeCli, "默认命令保活请求", 10_000);
-    first.child.kill("SIGTERM");
-    assert.equal((await first.exited).code, 0);
-    assert.equal(await readOwner(join(cliDir, "run.lock")), null);
-    assert.doesNotMatch(firstOut, /界面:/, "默认命令不得启动 Web 界面");
-
-    // b. ui 命令：从同一目录加载配置，启动 Web 界面与 API。
-    const second = childRun(["ui", "--data-dir", cliDir, "--port", "0"]);
-    const secondPort = await waitForPort(second.child);
-    const secondBase = `http://127.0.0.1:${secondPort}`;
-    const config = await (await fetch(`${secondBase}/api/config`)).json();
+    const firstPort = await waitForPort(first.child);
+    const firstBase = `http://127.0.0.1:${firstPort}`;
+    const config = await (await fetch(`${firstBase}/api/config`)).json();
     assert.deepEqual(config.config, presetConfig);
     assert.equal(config.configPath, join(cliDir, "config.json"));
-    const index = await fetch(`${secondBase}/`);
+    const index = await fetch(`${firstBase}/`);
     assert.equal(index.status, 200);
     assert.match(index.headers.get("content-type") ?? "", /text\/html/);
+
+    // 手动触发：立即发一次请求并返回结果。
+    const beforeTrigger = requests;
+    const trigger = await fetch(`${firstBase}/api/trigger`, {
+      method: "POST",
+    });
+    assert.equal(trigger.status, 200);
+    const triggered = await trigger.json();
+    await until(() => requests > beforeTrigger, "手动触发保活请求", 10_000);
+    assert.equal(triggered.lastRequest?.outcome, "success");
+
+    // 整分钟配置保存热生效。
     const beforeCliUi = requests;
-    const put = await fetch(`${secondBase}/api/config`, {
+    const put = await fetch(`${firstBase}/api/config`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -371,27 +383,45 @@ try {
       }),
     });
     assert.equal(put.status, 200);
-    await until(() => requests > beforeCliUi, "ui 命令保活请求", 10_000);
-    const status2 = await (await fetch(`${secondBase}/api/status`)).json();
+    await until(() => requests > beforeCliUi, "保存后立即请求", 10_000);
+    const status2 = await (await fetch(`${firstBase}/api/status`)).json();
     assert.equal(status2.status, "active");
+    first.child.kill("SIGTERM");
+    assert.equal((await first.exited).code, 0);
+    assert.equal(await readOwner(join(cliDir, "run.lock")), null);
+
+    // 指定端口被占用时回退随机端口。
+    const blocker = createServer(() => {});
+    await new Promise((resolveBlock) =>
+      blocker.listen(0, "127.0.0.1", resolveBlock),
+    );
+    const occupied = blocker.address().port;
+    const second = childRun(["--data-dir", cliDir, "--port", String(occupied)]);
+    const secondPort = await waitForPort(second.child);
+    assert.notEqual(secondPort, occupied, "被占用端口必须回退随机端口");
     second.child.kill("SIGTERM");
     assert.equal((await second.exited).code, 0);
+    await new Promise((resolveClose) => blocker.close(resolveClose));
     console.log(
-      "通过：默认命令仅运行引擎且不启动界面、ui 命令启动 Web 界面与 API、整分钟保存生效、SIGTERM 干净退出。",
+      "通过：默认命令启动引擎与 Web 界面、指定端口被占用回退随机端口、手动触发保活、整分钟保存生效、SIGTERM 干净退出。",
     );
   }
 
-  // 7. 日志轮转。
+  // 7. 日志行数上限：最多保留 10 行，超出丢弃最旧。
   {
     const logDirectory = join(directory, "日志");
-    const rotationLogger = new Logger(logDirectory);
-    for (let index = 0; index < 700; index++)
-      rotationLogger.write("info", "a".repeat(8_000));
+    const capLogger = new Logger(logDirectory);
+    for (let index = 0; index < 15; index++)
+      capLogger.write("info", `行-${index}`);
     const files = await readdir(logDirectory);
-    assert.equal(files.length, 3);
-    for (const file of files)
-      assert.ok((await stat(join(logDirectory, file))).size <= 2 * 1024 * 1024);
-    console.log("通过：日志轮转。");
+    assert.equal(files.length, 1, "不得产生轮转文件");
+    const lines = (await readFile(join(logDirectory, "keepalive.log"), "utf8"))
+      .split("\n")
+      .filter((line) => line !== "");
+    assert.equal(lines.length, 10);
+    assert.match(lines.at(-1), /行-14/);
+    assert.match(lines[0], /行-5/);
+    console.log("通过：日志 10 行上限。");
   }
 
   console.log("全部集成验证通过。");

@@ -37,6 +37,8 @@ pnpm install
 ## 常用命令
 
 ```bash
+pnpm dev                 # 本地调试：tsx watch 源码启动，数据隔离到 .dev-data，端口 3888
+pnpm dev:web             # 前端 Vite 开发服务器（HMR，/api 代理到 3888）
 pnpm typecheck           # 类型检查：tsc + vue-tsc
 pnpm lint                # ESLint
 pnpm format:check        # Prettier 格式检查
@@ -50,26 +52,33 @@ pnpm verify:integration  # 集成测试（先执行 build）
 ## 本地运行
 
 ```bash
-pnpm build
-node dist/cli.js ui
+pnpm dev
 ```
 
-与 `npx vpn-keepalive ui` 行为一致。建议加 `--data-dir` 指向临时目录，与真实数据隔离：
+开发脚本封装了本地调试所需的全部配置：
+
+- 从源码启动（tsx），无需先构建；`tsx watch` 监听 `src/` 变更自动重启
+- 数据隔离到 `./.dev-data`（已 gitignore），不与真实数据目录的实例锁冲突
+- 固定端口 `3888`，交互式终端下自动打开浏览器
+
+前端改动需要界面热更新时，另开终端运行：
 
 ```bash
-node dist/cli.js ui --port 3888 --data-dir /tmp/vk-dev
+pnpm dev:web
 ```
 
-### 增量构建
+Vite 开发服务器已配置 `/api` 代理到 `3888`，与 `pnpm dev` 同时运行即可获得前端 HMR。
 
-改动后无需整包重跑，可分别重建：
+也可以走构建产物验证（与 `npx vpn-keepalive` 行为一致）：
 
-- 后端：`pnpm exec tsc --watch`（监听 `src/`，增量输出到 `dist/`），改完重启进程生效（项目未配置进程自动重启工具）。
-- 前端：`pnpm exec vite build web`，构建完成后刷新浏览器即可。项目未配置 Vite dev 代理，直接跑 `vite dev` 无法请求 `/api/*`，调试 UI 请走构建产物。
+```bash
+pnpm build
+node dist/cli.js --data-dir /tmp/vk-dev
+```
 
 ## 调试
 
-后端以 Node 原生能力为主（仅 CLI 解析依赖 commander），直接用 inspector：
+后端以 Node 原生能力为主（CLI 解析依赖 commander，端口查找依赖 get-port），直接用 inspector：
 
 ```bash
 node --inspect-brk dist/cli.js --data-dir /tmp/vk-dev

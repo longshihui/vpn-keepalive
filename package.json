@@ -14,6 +14,8 @@
     "node": ">=20.0.0"
   },
   "scripts": {
+    "dev": "tsx watch src/cli.ts --data-dir ./.dev-data --port 3888",
+    "dev:web": "vite web",
     "typecheck": "tsc --noEmit && vue-tsc --noEmit -p web/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier . --write",
@@ -30,6 +32,7 @@
     "globals": "^17.0.0",
     "naive-ui": "^2.45.3",
     "prettier": "^3.8.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.0.0",
     "vite": "^7.0.0",
@@ -43,6 +46,7 @@
     ]
   },
   "dependencies": {
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "get-port": "^7.2.0"
   }
 }

@@ -1,4 +1,10 @@
-import type { Config, ConfigResponse, LogsResponse, Status } from "./types";
+import type {
+  Config,
+  ConfigResponse,
+  LogsResponse,
+  Status,
+  TriggerResponse,
+} from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -34,4 +40,8 @@ export function fetchStatus(): Promise<Status> {
 
 export function fetchLogs(lines = 200): Promise<LogsResponse> {
   return request<LogsResponse>(`/api/logs?lines=${lines}`);
+}
+
+export function triggerKeepalive(): Promise<TriggerResponse> {
+  return request<TriggerResponse>("/api/trigger", { method: "POST" });
 }

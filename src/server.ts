@@ -94,8 +94,17 @@ export async function createAppServer(
   options: AppServerOptions,
 ): Promise<AppServer> {
   const { engine, paths, version } = options;
-  const webRoot =
-    options.webRoot ?? fileURLToPath(new URL("./web", import.meta.url));
+  // 默认使用产物旁的 web 目录；从源码运行（tsx dev）时回退到 dist/web。
+  const sourceRoot = fileURLToPath(new URL("./web", import.meta.url));
+  const buildRoot = fileURLToPath(new URL("../dist/web", import.meta.url));
+  let defaultRoot = sourceRoot;
+  try {
+    await stat(sourceRoot);
+  } catch (error) {
+    if (!hasCode(error, "ENOENT")) throw error;
+    defaultRoot = buildRoot;
+  }
+  const webRoot = options.webRoot ?? defaultRoot;
 
   const readConfig = async (): Promise<Config> => {
     const text = await readOptional(paths.config);
@@ -138,6 +147,19 @@ export async function createAppServer(
           lines: all.slice(-count),
           total: all.length,
           logPath,
+        });
+        return;
+      }
+      if (url.pathname === "/api/trigger" && request.method === "POST") {
+        if (!engine.getConfig().url) {
+          sendJson(response, 400, {
+            error: "未选择保活地址，请先在配置中选择活动地址。",
+          });
+          return;
+        }
+        await engine.triggerNow();
+        sendJson(response, 200, {
+          lastRequest: engine.getStatus().lastRequest,
         });
         return;
       }

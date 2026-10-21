@@ -30,6 +30,12 @@ const onSave = async (): Promise<void> => {
     message.error(form.saveError.value ?? "保存失败");
   }
 };
+
+/** 手动保活完成后立即刷新状态与日志，不等轮询。 */
+const onTriggered = (): void => {
+  void status.refresh();
+  void logs.refresh();
+};
 </script>
 
 <template>
@@ -62,6 +68,7 @@ const onSave = async (): Promise<void> => {
             :uptime="status.uptime.value"
             :countdown="status.countdown.value"
             :logs="logs.logs.value"
+            @triggered="onTriggered"
           />
           <ConfigForm
             :config="form.config.value"

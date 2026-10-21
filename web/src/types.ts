@@ -25,6 +25,10 @@ export interface RequestResult {
   detail: string;
 }
 
+export interface TriggerResponse {
+  lastRequest: RequestResult | null;
+}
+
 export interface Status {
   status: "waiting" | "active" | "stopped";
   url: string | null;
