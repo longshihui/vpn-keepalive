@@ -151,9 +151,9 @@ export async function createAppServer(
         return;
       }
       if (url.pathname === "/api/trigger" && request.method === "POST") {
-        if (!engine.getConfig().url) {
+        if (engine.getConfig().urls.length === 0) {
           sendJson(response, 400, {
-            error: "未选择保活地址，请先在配置中选择活动地址。",
+            error: "未配置保活地址，请先在配置中添加地址。",
           });
           return;
         }

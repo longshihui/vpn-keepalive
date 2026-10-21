@@ -21,7 +21,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   add: [];
   remove: [url: string];
-  select: [url: string];
   "update:newUrl": [value: string];
   save: [];
 }>();
@@ -49,14 +48,13 @@ const onIntervalBlur = (): void => {
       <n-form-item label="保活地址列表">
         <UrlListEditor
           :urls="config.urls"
-          :active-url="config.url"
           :new-url="newUrl"
           @add="emit('add')"
           @remove="emit('remove', $event)"
-          @select="emit('select', $event)"
           @update:newUrl="emit('update:newUrl', $event)"
         />
       </n-form-item>
+      <p class="field-hint">每次保活请求将从列表中随机选取一个地址。</p>
       <n-alert v-if="addError" type="error" :bordered="false" class="add-error">
         {{ addError }}
       </n-alert>
@@ -98,6 +96,12 @@ const onIntervalBlur = (): void => {
 </template>
 
 <style scoped>
+.field-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #71717a;
+}
+
 .add-error {
   margin-bottom: 12px;
 }

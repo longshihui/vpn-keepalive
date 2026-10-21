@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import {
-  NButton,
-  NCard,
-  NDescriptions,
-  NDescriptionsItem,
-  NTag,
-  NText,
-  useMessage,
-} from "naive-ui";
-import type { LogsResponse, RequestOutcome, Status } from "../types";
+import { NButton, NCard, NTag, NText, useMessage } from "naive-ui";
+import type { RequestOutcome, Status } from "../types";
 import { useTrigger } from "../hooks/useTrigger";
 
 const props = defineProps<{
@@ -17,7 +9,6 @@ const props = defineProps<{
   statusText: string;
   uptime: string;
   countdown: string;
-  logs: LogsResponse | null;
 }>();
 
 const emit = defineEmits<{ triggered: [] }>();
@@ -48,12 +39,6 @@ const outcomeTag: Record<
 
 const formatTime = (iso: string): string => new Date(iso).toLocaleTimeString();
 
-const levelClass = (line: string): string => {
-  if (line.includes("[error]")) return "log-error";
-  if (line.includes("[warn]")) return "log-warn";
-  return "log-info";
-};
-
 const onTrigger = async (): Promise<void> => {
   const response = await trigger.trigger();
   if (!response) {
@@ -63,10 +48,10 @@ const onTrigger = async (): Promise<void> => {
   const last = response.lastRequest;
   if (!last) message.info("已触发保活请求");
   else if (last.outcome === "success")
-    message.success(`保活请求成功：${last.detail}`);
+    message.success(`保活请求成功（${last.detail}）：${last.url}`);
   else
     message.error(
-      `保活请求失败（${outcomeTag[last.outcome].label}）：${last.detail}`,
+      `保活请求失败（${outcomeTag[last.outcome].label}）：${last.url}`,
     );
   emit("triggered");
 };
@@ -76,16 +61,6 @@ const onTrigger = async (): Promise<void> => {
   <n-card title="运行状态" size="small">
     <template #header-extra>
       <div class="header-extra">
-        <n-button
-          size="small"
-          type="primary"
-          secondary
-          :loading="trigger.triggering.value"
-          :disabled="status?.status !== 'active'"
-          @click="onTrigger"
-        >
-          立即保活
-        </n-button>
         <n-tag :type="statusTag.type" size="small" round>
           <template #icon>
             <span
@@ -96,78 +71,78 @@ const onTrigger = async (): Promise<void> => {
           </template>
           {{ statusText }}
         </n-tag>
+        <n-button
+          size="small"
+          type="primary"
+          secondary
+          :loading="trigger.triggering.value"
+          :disabled="status?.status !== 'active'"
+          @click="onTrigger"
+        >
+          立即保活
+        </n-button>
       </div>
     </template>
 
-    <n-descriptions
-      v-if="status"
-      :column="2"
-      label-placement="left"
-      size="small"
-      bordered
-    >
-      <n-descriptions-item label="当前地址" :span="2">
-        <n-text v-if="status.url" code class="mono">{{ status.url }}</n-text>
-        <n-text v-else depth="3">未选择</n-text>
-      </n-descriptions-item>
-      <n-descriptions-item label="运行时长">{{ uptime }}</n-descriptions-item>
-      <n-descriptions-item label="下次请求">
-        <template v-if="status.status === 'active'">{{ countdown }}</template>
-        <n-text v-else depth="3">—</n-text>
-      </n-descriptions-item>
-      <n-descriptions-item label="最近请求" :span="2">
-        <template v-if="status.lastRequest">
-          <n-tag
-            size="small"
-            :type="outcomeTag[status.lastRequest.outcome].type"
-          >
-            {{ outcomeTag[status.lastRequest.outcome].label }}
-          </n-tag>
-          <span class="detail">
-            {{ formatTime(status.lastRequest.at) }}
-            {{ status.lastRequest.detail }}
-          </span>
-        </template>
-        <n-text v-else depth="3">—</n-text>
-      </n-descriptions-item>
-    </n-descriptions>
-    <p v-else class="empty">状态加载中…</p>
-
-    <div class="console">
-      <div class="console-header">
-        <span class="console-title">控制台日志</span>
-        <span class="console-path mono" :title="logs?.logPath ?? ''">
-          {{ logs?.logPath ?? "—" }}
+    <template v-if="status">
+      <div class="url-row">
+        <span class="stat-label">保活地址</span>
+        <span v-if="status.urlsCount > 0" class="stat-value">
+          {{ status.urlsCount }} 个
+          <span class="stat-sub">· 每次随机选取</span>
         </span>
-        <span v-if="logs" class="console-count"
-          >{{ logs.lines.length }} 行</span
-        >
+        <span v-else class="stat-empty">未配置</span>
       </div>
-      <div class="console-body">
-        <p
-          v-for="(line, index) in logs?.lines ?? []"
-          :key="index"
-          :class="levelClass(line)"
-        >
-          {{ line }}
-        </p>
-        <p v-if="logs && logs.lines.length === 0" class="log-info">暂无日志</p>
+
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-label">运行时长</span>
+          <span class="stat-value mono">{{ uptime }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">下次请求</span>
+          <span v-if="status.status === 'active'" class="stat-value mono">
+            {{ countdown }}
+          </span>
+          <span v-else class="stat-empty">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">最近请求</span>
+          <div v-if="status.lastRequest" class="last-request">
+            <div class="last-request-main">
+              <n-tag
+                size="small"
+                :type="outcomeTag[status.lastRequest.outcome].type"
+              >
+                {{ outcomeTag[status.lastRequest.outcome].label }}
+              </n-tag>
+              <span class="detail mono">
+                {{ formatTime(status.lastRequest.at) }}
+              </span>
+            </div>
+            <n-text
+              class="last-request-url mono"
+              :title="status.lastRequest.url"
+            >
+              {{ status.lastRequest.url }}
+            </n-text>
+          </div>
+          <span v-else class="stat-empty">—</span>
+        </div>
       </div>
-    </div>
+    </template>
+    <p v-else class="empty">状态加载中…</p>
 
     <template #footer>
       <div class="meta">
-        <div>
-          数据目录：<n-text code class="mono">{{
-            status?.dataRoot ?? "—"
-          }}</n-text>
-        </div>
-        <div>
-          配置：<n-text code class="mono">{{
-            status?.configPath ?? "—"
-          }}</n-text>
-        </div>
-        <div>PID {{ status?.pid ?? "—" }} · v{{ status?.version ?? "—" }}</div>
+        <span class="meta-item">PID {{ status?.pid ?? "—" }}</span>
+        <span class="meta-item">v{{ status?.version ?? "—" }}</span>
+        <span class="meta-item mono" :title="status?.dataRoot ?? ''">
+          {{ status?.dataRoot ?? "—" }}
+        </span>
+        <span class="meta-item mono" :title="status?.configPath ?? ''">
+          {{ status?.configPath ?? "—" }}
+        </span>
       </div>
     </template>
   </n-card>
@@ -189,13 +164,83 @@ const onTrigger = async (): Promise<void> => {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  word-break: break-all;
+}
+
+.url-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stat-sub {
+  font-size: 12px;
+  color: #71717a;
+  font-weight: 400;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e4e4e7;
+}
+
+.stat {
+  display: grid;
+  gap: 4px;
+  padding: 0 16px;
+  min-width: 0;
+}
+
+.stat:first-child {
+  padding-left: 0;
+}
+
+.stat + .stat {
+  border-left: 1px solid #e4e4e7;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #71717a;
+}
+
+.stat-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #18181b;
+}
+
+.stat-empty {
+  font-size: 14px;
+  color: #a1a1aa;
+}
+
+.last-request {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.last-request-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .detail {
   font-size: 12px;
   color: #71717a;
-  margin-left: 8px;
+}
+
+.last-request-url {
+  font-size: 11px;
+  color: #71717a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty {
@@ -205,73 +250,40 @@ const onTrigger = async (): Promise<void> => {
 }
 
 .meta {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-  color: #71717a;
-}
-
-.console {
-  margin-top: 16px;
-  border-radius: 6px;
-  overflow: hidden;
-  background: #0f172a;
-  box-shadow: inset 0 0 0 1px #1e293b;
-}
-
-.console-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: #1e293b;
+  gap: 16px;
   font-size: 12px;
-  color: #94a3b8;
+  color: #71717a;
+  overflow: hidden;
 }
 
-.console-title {
-  flex: none;
-  color: #e2e8f0;
-  font-weight: 500;
+.meta-item {
+  white-space: nowrap;
 }
 
-.console-path {
-  flex: 1;
-  min-width: 0;
+.meta-item.mono {
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #64748b;
 }
 
-.console-count {
-  flex: none;
-}
+@media (max-width: 720px) {
+  .stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 
-.console-body {
-  height: 280px;
-  overflow-y: auto;
-  padding: 10px 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.7;
-}
+  .stat {
+    padding: 0;
+  }
 
-.console-body p {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
+  .stat + .stat {
+    border-left: none;
+  }
 
-.log-info {
-  color: #94a3b8;
-}
-
-.log-warn {
-  color: #fbbf24;
-}
-
-.log-error {
-  color: #f87171;
+  .meta {
+    flex-wrap: wrap;
+  }
 }
 </style>

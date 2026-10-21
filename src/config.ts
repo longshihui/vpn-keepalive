@@ -2,17 +2,14 @@ import { readFile } from "node:fs/promises";
 import { record, writeAtomic } from "./files.js";
 
 export interface Config {
-  /** 可配置的保活地址列表，默认为空 */
+  /** 可配置的保活地址列表，每次请求随机选取其一 */
   urls: string[];
-  /** 当前选中的活动地址；null 表示未选择，引擎待机 */
-  url: string | null;
   intervalMinutes: number;
   timeoutMs: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
   urls: [],
-  url: null,
   intervalMinutes: 1,
   timeoutMs: 10_000,
 };
@@ -57,10 +54,13 @@ function positiveMinutes(value: unknown): number {
 
 export function parseConfig(input: unknown): Config {
   if (!record(input)) throw new Error("配置必须为 JSON 对象。");
-  const known = new Set(["urls", "url", "intervalMinutes", "timeoutMs"]);
-  for (const key of Object.keys(input))
+  const rest = { ...input };
+  // 旧版"活动地址"字段已废弃：每次请求随机选取，读取时静默忽略以兼容既有配置文件。
+  delete rest.url;
+  const known = new Set(["urls", "intervalMinutes", "timeoutMs"]);
+  for (const key of Object.keys(rest))
     if (!known.has(key)) throw new Error(`未知配置字段：${key}`);
-  const urlsInput = input.urls === undefined ? [] : input.urls;
+  const urlsInput = rest.urls === undefined ? [] : rest.urls;
   if (
     !Array.isArray(urlsInput) ||
     !urlsInput.every((item): item is string => typeof item === "string")
@@ -69,17 +69,8 @@ export function parseConfig(input: unknown): Config {
   const urls = urlsInput.map((item) => parseUrl(item, "urls 项"));
   if (new Set(urls).size !== urls.length)
     throw new Error("urls 中存在重复地址。");
-  let url: string | null = null;
-  if (input.url !== undefined && input.url !== null) {
-    if (typeof input.url !== "string")
-      throw new Error("url 必须为字符串或 null。");
-    url = parseUrl(input.url, "url");
-    if (!urls.includes(url))
-      throw new Error("url 必须为 urls 中的地址，或为 null。");
-  }
   return {
     urls,
-    url,
     intervalMinutes: positiveMinutes(
       input.intervalMinutes === undefined
         ? DEFAULT_CONFIG.intervalMinutes

@@ -5,13 +5,14 @@ import type { DataPaths } from "./paths.js";
 
 export interface RequestResult {
   at: string;
+  url: string;
   outcome: "success" | "http-error" | "timeout" | "network-error";
   detail: string;
 }
 
 export interface EngineStatus {
   status: "waiting" | "active" | "stopped";
-  url: string | null;
+  urlsCount: number;
   startedAt: string;
   updatedAt: string;
   nextRequestAt: string | null;
@@ -19,7 +20,7 @@ export interface EngineStatus {
   error: string | null;
 }
 
-/** 周期保活引擎：选中地址后按间隔请求；未选择地址时待机。 */
+/** 周期保活引擎：地址列表非空时按间隔随机选取地址请求，否则待机。 */
 export class KeepaliveEngine {
   private config: Config;
   private readonly paths: DataPaths;
@@ -40,7 +41,7 @@ export class KeepaliveEngine {
     this.logger = new Logger(paths.logs);
     this.status = {
       status: "stopped",
-      url: config.url,
+      urlsCount: config.urls.length,
       startedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       nextRequestAt: null,
@@ -61,9 +62,9 @@ export class KeepaliveEngine {
     this.stopping = false;
     this.logger.write(
       "info",
-      this.config.url
-        ? `保活启动，地址 ${this.config.url}，间隔 ${this.config.intervalMinutes} 分钟。`
-        : "保活启动，未选择地址，待机。",
+      this.config.urls.length > 0
+        ? `保活启动，${this.config.urls.length} 个地址，间隔 ${this.config.intervalMinutes} 分钟，随机选取请求。`
+        : "保活启动，未配置地址，待机。",
     );
     this.schedule(true);
     this.flush();
@@ -74,9 +75,9 @@ export class KeepaliveEngine {
     this.config = config;
     this.logger.write(
       "info",
-      config.url
-        ? `配置已更新，保活地址 ${config.url}，间隔 ${config.intervalMinutes} 分钟。`
-        : "配置已更新，未选择地址，待机。",
+      config.urls.length > 0
+        ? `配置已更新，${config.urls.length} 个地址，间隔 ${config.intervalMinutes} 分钟，随机选取请求。`
+        : "配置已更新，未配置地址，待机。",
     );
     this.schedule(true);
     this.flush();
@@ -87,7 +88,7 @@ export class KeepaliveEngine {
    * 在途请求未结束时等待其完成，完成后结果记入 lastRequest。
    */
   triggerNow(): Promise<void> {
-    if (!this.config.url) return Promise.resolve();
+    if (this.config.urls.length === 0) return Promise.resolve();
     this.logger.write("info", "手动触发保活请求。");
     return this.requestOnce().catch((error: unknown) => {
       this.logger.write("error", `保活请求异常：${errorMessage(error)}`);
@@ -134,14 +135,13 @@ export class KeepaliveEngine {
     this.requestController?.abort();
     this.status.nextRequestAt = null;
     const current = this.generation;
-    const { url } = this.config;
-    if (!url || this.signal.aborted || this.stopping) {
+    this.status.urlsCount = this.config.urls.length;
+    const hasUrls = this.config.urls.length > 0;
+    if (!hasUrls || this.signal.aborted || this.stopping) {
       this.status.status = this.stopping ? "stopped" : "waiting";
-      this.status.url = url;
       return;
     }
     this.status.status = "active";
-    this.status.url = url;
     const fire = (): void => {
       if (current !== this.generation) return;
       void this.requestOnce().catch((error: unknown) => {
@@ -168,17 +168,25 @@ export class KeepaliveEngine {
     }, intervalMs);
   }
 
+  /** 从地址列表中随机选取本次请求的目标地址；列表为空时返回 null。 */
+  private pickUrl(): string | null {
+    const urls = this.config.urls;
+    if (urls.length === 0) return null;
+    const index = Math.floor(Math.random() * urls.length);
+    return urls[index] ?? null;
+  }
+
   /** 发起单次保活请求；在途未结束时直接返回在途任务（不重叠）。 */
   private requestOnce(): Promise<void> {
     if (this.signal.aborted || this.stopping) return Promise.resolve();
     if (this.requestTask) return this.requestTask;
-    const { url } = this.config;
+    const url = this.pickUrl();
     if (!url) return Promise.resolve();
     const generation = this.generation;
     const controller = new AbortController();
     this.requestController = controller;
     // 清理挂在 finally 链上：await requestTask 返回时保证已完全退出。
-    this.requestTask = this.executeRequest(generation, controller).finally(
+    this.requestTask = this.executeRequest(generation, controller, url).finally(
       () => {
         this.requestTask = null;
         this.requestController = null;
@@ -190,9 +198,8 @@ export class KeepaliveEngine {
   private async executeRequest(
     generation: number,
     controller: AbortController,
+    url: string,
   ): Promise<void> {
-    const { url } = this.config;
-    if (!url) return;
     let timedOut = false;
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -207,12 +214,14 @@ export class KeepaliveEngine {
       await response.body?.cancel();
       result = {
         at: new Date().toISOString(),
+        url,
         outcome: response.ok ? "success" : "http-error",
         detail: `${response.status} ${response.statusText}`,
       };
     } catch (error) {
       result = {
         at: new Date().toISOString(),
+        url,
         outcome: timedOut ? "timeout" : "network-error",
         detail: timedOut
           ? `请求超时（${this.config.timeoutMs}ms）`
@@ -225,8 +234,12 @@ export class KeepaliveEngine {
     if (generation !== this.generation || this.stopping) return;
     this.status.lastRequest = result;
     this.logger.write(
-      result.outcome === "success" ? "info" : "warn",
-      `保活请求 ${result.outcome}: ${result.detail}`,
+      result.outcome === "success"
+        ? "success"
+        : result.outcome === "timeout"
+          ? "warn"
+          : "error",
+      `保活请求 ${result.outcome}: ${result.detail}（${result.url}）`,
     );
     this.flush();
   }

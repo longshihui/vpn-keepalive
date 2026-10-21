@@ -1,6 +1,5 @@
 export interface Config {
   urls: string[];
-  url: string | null;
   intervalMinutes: number;
   timeoutMs: number;
 }
@@ -21,6 +20,7 @@ export type RequestOutcome =
 
 export interface RequestResult {
   at: string;
+  url: string;
   outcome: RequestOutcome;
   detail: string;
 }
@@ -31,7 +31,7 @@ export interface TriggerResponse {
 
 export interface Status {
   status: "waiting" | "active" | "stopped";
-  url: string | null;
+  urlsCount: number;
   startedAt: string;
   updatedAt: string;
   nextRequestAt: string | null;

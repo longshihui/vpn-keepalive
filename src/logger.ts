@@ -11,7 +11,7 @@ export class Logger {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.path = join(directory, "keepalive.log");
   }
-  write(level: "info" | "warn" | "error", message: string): void {
+  write(level: "info" | "success" | "warn" | "error", message: string): void {
     const line = `${new Date().toISOString()} [${level}] ${message.replaceAll(/\r?\n/g, " ").slice(0, 8_000)}`;
     let previous = "";
     try {

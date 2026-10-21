@@ -56,7 +56,7 @@ export function useStatus() {
       case "active":
         return "保活中";
       case "waiting":
-        return "待机（未选择地址）";
+        return "待机（未配置地址）";
       case "stopped":
         return "已停止";
       default:

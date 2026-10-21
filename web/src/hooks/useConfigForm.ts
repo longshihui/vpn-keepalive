@@ -42,8 +42,6 @@ export function useConfigForm() {
     if (!current) return null;
     if (current.urls.includes(href)) return "地址已存在于列表中。";
     current.urls.push(href);
-    // 列表从空变为非空时自动选中，减少一次手动操作。
-    if (current.url === null) current.url = href;
     newUrl.value = "";
     return null;
   };
@@ -52,21 +50,11 @@ export function useConfigForm() {
     const current = config.value;
     if (!current) return;
     current.urls = current.urls.filter((item) => item !== url);
-    if (current.url === url) current.url = current.urls[0] ?? null;
-  };
-
-  const selectUrl = (url: string): void => {
-    const current = config.value;
-    if (current?.urls.includes(url)) current.url = url;
   };
 
   const save = async (): Promise<boolean> => {
     const current = config.value;
     if (!current || saving.value) return false;
-    if (current.urls.length === 0 && current.url !== null) {
-      saveError.value = "地址列表为空时不能选中活动地址。";
-      return false;
-    }
     saving.value = true;
     saveError.value = null;
     try {
@@ -92,7 +80,6 @@ export function useConfigForm() {
     load,
     addUrl,
     removeUrl,
-    selectUrl,
     save,
   };
 }

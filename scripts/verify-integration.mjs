@@ -109,7 +109,6 @@ try {
 
   // 1. 配置与存储设置校验。
   for (const invalid of [
-    { url: "http://example.com" },
     { urls: ["http://a.com", "http://a.com/"] },
     { urls: ["file:///tmp/example"] },
     { urls: "http://a.com" },
@@ -124,16 +123,19 @@ try {
   }
   assert.deepEqual(parseConfig({}), {
     urls: [],
-    url: null,
     intervalMinutes: 1,
     timeoutMs: 10_000,
   });
-  console.log("通过：配置默认值与整分钟间隔校验。");
+  // 旧版“活动地址”字段被静默忽略，兼容既有配置文件。
+  assert.deepEqual(
+    parseConfig({ url: "http://example.com", urls: ["http://a.com"] }),
+    { urls: ["http://a.com/"], intervalMinutes: 1, timeoutMs: 10_000 },
+  );
+  console.log("通过：配置默认值、旧字段兼容与整分钟间隔校验。");
 
   // 2. 引擎生命周期（直接构造配置对象以使用亚分钟周期，间隔校验在配置层）。
   const fastConfig = {
     urls: [url],
-    url,
     intervalMinutes: 0.0015,
     timeoutMs: 260,
   };
@@ -141,10 +143,13 @@ try {
   engine = new KeepaliveEngine(fastConfig, paths, lifecycle.signal);
   const state = async () => readState(paths.state);
   engine.start();
-  await until(
-    async () => (await state()).lastRequest?.outcome === "success",
-    "首次成功请求",
-  );
+  await until(async () => {
+    const current = await state();
+    return (
+      current.lastRequest?.outcome === "success" &&
+      current.lastRequest?.url === url
+    );
+  }, "首次成功请求（结果含请求地址）");
   await until(() => requests >= 2, "周期请求");
   behavior = "503";
   await until(
@@ -170,9 +175,9 @@ try {
     async () => (await state()).lastRequest?.outcome === "timeout",
     "请求超时",
   );
-  // 热更新：切换为 null（待机零请求），再切回恢复。
+  // 热更新：清空地址列表（待机零请求），再切回恢复。
   const beforePause = requests;
-  engine.applyConfig({ ...fastConfig, url: null });
+  engine.applyConfig({ ...fastConfig, urls: [] });
   await until(async () => (await state()).status === "waiting", "热更新后待机");
   await delay(200);
   assert.equal(requests, beforePause, "待机期间零请求");
@@ -193,14 +198,13 @@ try {
     "通过：立即/周期请求、错误分类、超时、不重叠、热更新（在途中止后立即重发、暂停与恢复）、getConfig、停止取消在途请求。",
   );
 
-  // 3. url 为 null 时待机零请求。
+  // 3. 地址列表为空时待机零请求。
   {
     const idlePaths = getPaths(join(directory, "待机"));
     const idleLifecycle = new AbortController();
     const idleEngine = new KeepaliveEngine(
       {
-        urls: [url],
-        url: null,
+        urls: [],
         intervalMinutes: 0.002,
         timeoutMs: 10_000,
       },
@@ -214,10 +218,10 @@ try {
       "进入待机",
     );
     await delay(200);
-    assert.equal(requests, beforeIdle, "未选择地址时零请求");
+    assert.equal(requests, beforeIdle, "未配置地址时零请求");
     await idleEngine.stop();
     idleLifecycle.abort();
-    console.log("通过：未选择地址时待机、零请求。");
+    console.log("通过：未配置地址时待机、零请求。");
   }
 
   // 4. 实例锁：同目录二次启动拒绝；陈旧锁可抢占。
@@ -247,7 +251,6 @@ try {
     const apiPaths = getPaths(join(directory, "api"));
     const apiConfig = parseConfig({
       urls: [url],
-      url,
       intervalMinutes: 1,
       timeoutMs: 5000,
     });
@@ -282,7 +285,6 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         urls: [url],
-        url,
         intervalMinutes: 1,
         timeoutMs: 1000,
       }),
@@ -292,7 +294,7 @@ try {
     assert.equal(saved.intervalMinutes, 1);
     await until(() => requests > beforePut, "热更新后立即请求");
     const status = await (await fetch(`${base}/api/status`)).json();
-    assert.equal(status.url, new URL(url).href);
+    assert.equal(status.urlsCount, 1);
     assert.ok(["active", "waiting"].includes(status.status));
     assert.ok(Number.isFinite(status.uptimeMs));
     assert.equal(status.pid, process.pid);
@@ -302,26 +304,25 @@ try {
     const index = await fetch(`${base}/`);
     assert.equal(index.status, 404, "Web 资源缺失时回退 404");
 
-    // 手动触发接口：未选择地址时返回 400。
+    // 手动触发接口：地址列表为空时返回 400。
     const idle = await fetch(`${base}/api/config`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        urls: [url],
-        url: null,
+        urls: [],
         intervalMinutes: 1,
         timeoutMs: 1000,
       }),
     });
     assert.equal(idle.status, 200);
     const noUrl = await fetch(`${base}/api/trigger`, { method: "POST" });
-    assert.equal(noUrl.status, 400, "未选择地址时触发必须被拒绝");
+    assert.equal(noUrl.status, 400, "未配置地址时触发必须被拒绝");
 
     // 日志接口：尾部行数、路径、格式。
     const logsResponse = await (await fetch(`${base}/api/logs?lines=3`)).json();
     assert.ok(Array.isArray(logsResponse.lines));
     assert.ok(logsResponse.lines.length > 0 && logsResponse.lines.length <= 3);
-    assert.match(logsResponse.lines.at(-1), /\[(info|warn|error)\]/);
+    assert.match(logsResponse.lines.at(-1), /\[(info|success|warn|error)\]/);
     assert.equal(logsResponse.logPath, join(apiPaths.logs, "keepalive.log"));
     // 停止后：停止日志落盘；state 仍在数据根目录。
     appServer.server.closeAllConnections();
@@ -344,7 +345,6 @@ try {
     // 预置配置：CLI 从数据目录加载并立即开始保活。
     const presetConfig = parseConfig({
       urls: [url],
-      url,
       intervalMinutes: 1,
       timeoutMs: 2000,
     });
@@ -377,7 +377,6 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         urls: [url],
-        url,
         intervalMinutes: 1,
         timeoutMs: 2000,
       }),
