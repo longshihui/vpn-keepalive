@@ -25,12 +25,13 @@ const children = new Set();
 let requests = 0;
 let active = 0;
 let maxActive = 0;
+let measureOverlap = true;
 let behavior = "ok";
 
 const server = createServer((request, response) => {
   requests++;
   active++;
-  maxActive = Math.max(maxActive, active);
+  if (measureOverlap) maxActive = Math.max(maxActive, active);
   response.on("close", () => {
     active--;
   });
@@ -165,9 +166,12 @@ try {
   await until(() => active === 1, "阻塞请求");
   // 热更新中止在途请求后必须立即按新配置重发，不等下一周期。
   const beforeReload = requests;
+  // 客户端中止已完成时，服务端的 close 事件可能尚未到达。
+  measureOverlap = false;
   engine.applyConfig({ ...fastConfig });
   await until(() => requests > beforeReload, "热更新中止在途后立即重发");
   await until(() => active === 1, "重发后的在途请求");
+  measureOverlap = true;
   const beforeSlow = requests;
   await delay(150);
   assert.equal(requests, beforeSlow, "在途请求期间不得重叠");
@@ -386,8 +390,14 @@ try {
     const status2 = await (await fetch(`${firstBase}/api/status`)).json();
     assert.equal(status2.status, "active");
     first.child.kill("SIGTERM");
-    assert.equal((await first.exited).code, 0);
-    assert.equal(await readOwner(join(cliDir, "run.lock")), null);
+    const firstExit = await first.exited;
+    // Windows 的 child.kill 会强制结束进程，无法触发 CLI 的信号清理。
+    if (process.platform === "win32") {
+      assert.equal(firstExit.signal, "SIGTERM");
+    } else {
+      assert.equal(firstExit.code, 0);
+      assert.equal(await readOwner(join(cliDir, "run.lock")), null);
+    }
 
     // 指定端口被占用时回退随机端口。
     const blocker = createServer(() => {});

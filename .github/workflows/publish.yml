@@ -6,6 +6,10 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+
+env:
+  HUSKY: 0
 
 jobs:
   publish:
@@ -18,7 +22,10 @@ jobs:
           node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org/
+      - name: 安装支持 OIDC 的 npm CLI（要求 npm >= 11.5.1）
+        run: npm install --global npm@11
       - run: pnpm install --frozen-lockfile
+      - run: pnpm commitlint --last --verbose
       - name: 校验 tag 与 package.json 版本一致
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
@@ -31,6 +38,6 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm verify:integration
-      - run: pnpm publish --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: pnpm verify:release
+      - name: 通过 OIDC 发布到 npm
+        run: npm publish --access public
