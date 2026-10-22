@@ -28,6 +28,9 @@
     "build": "tsc && vite build web && node scripts/finish-build.mjs",
     "prepare": "node scripts/prepare.mjs",
     "prepack": "pnpm run build",
+    "release": "release-it",
+    "release:dry-run": "release-it --dry-run",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm verify:integration && pnpm verify:release",
     "verify:integration": "pnpm run build && node scripts/verify-integration.mjs",
     "verify:release": "node scripts/verify-release.mjs"
   },
