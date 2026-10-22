@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.1](https://github.com/longshihui/vpn-keepalive/compare/v1.0.0...v1.0.1) (2026-10-22)
+
+### Bug Fixes
+
+- **engine:** https 地址跳过证书校验，自签证书不再误报网络错误 ([43b3fd6](https://github.com/longshihui/vpn-keepalive/commit/43b3fd6ceaaec547cec12235fc0c89b7d69c8a7c))
+
 ## 1.0.0 (2026-10-22)
 
 ### ⚠ BREAKING CHANGES
