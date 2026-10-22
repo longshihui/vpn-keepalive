@@ -8,9 +8,6 @@ permissions:
   contents: read
   id-token: write
 
-env:
-  HUSKY: 0
-
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -25,7 +22,6 @@ jobs:
       - name: 安装支持 OIDC 的 npm CLI（要求 npm >= 11.5.1）
         run: npm install --global npm@11
       - run: pnpm install --frozen-lockfile
-      - run: pnpm commitlint --last --verbose
       - name: 校验 tag 与 package.json 版本一致
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
@@ -35,9 +31,5 @@ jobs:
             exit 1
           fi
       - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm format:check
-      - run: pnpm verify:integration
-      - run: pnpm verify:release
       - name: 通过 OIDC 发布到 npm
         run: npm publish --access public

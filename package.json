@@ -26,6 +26,7 @@
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "build": "tsc && vite build web && node scripts/finish-build.mjs",
+    "prepare": "node scripts/prepare.mjs",
     "prepack": "pnpm run build",
     "verify:integration": "pnpm run build && node scripts/verify-integration.mjs",
     "verify:release": "node scripts/verify-release.mjs"
