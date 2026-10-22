@@ -65,6 +65,7 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "get-port": "^7.2.0"
+    "get-port": "^7.2.0",
+    "undici": "^6.23.0"
   }
 }

@@ -1,7 +1,14 @@
+import { Agent, fetch } from "undici";
 import type { Config } from "./config.js";
 import { errorMessage, writeJson } from "./files.js";
 import { Logger } from "./logger.js";
 import type { DataPaths } from "./paths.js";
+
+// 保活请求仅用于保持隧道活跃，不传输敏感数据；VPN 内网目标常使用自签或
+// 无效证书，故 https 请求跳过证书校验，避免误报网络错误。
+const insecureTlsAgent = new Agent({
+  connect: { rejectUnauthorized: false },
+});
 
 export interface RequestResult {
   at: string;
@@ -210,6 +217,8 @@ export class KeepaliveEngine {
       const response = await fetch(url, {
         method: "GET",
         signal: controller.signal,
+        // 仅 https 跳过证书校验；http 走默认全局行为。
+        ...(url.startsWith("https:") ? { dispatcher: insecureTlsAgent } : {}),
       });
       await response.body?.cancel();
       result = {
